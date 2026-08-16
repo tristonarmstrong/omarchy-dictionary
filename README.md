@@ -2,7 +2,7 @@
 
 A Quickshell bar widget for Omarchy Quattro that looks up English word definitions from the Free Dictionary API.
 
-Click the bar icon to open a search field, type a word, and press Enter. Definitions, phonetics, parts of speech, synonyms, and examples stream back as you go. Misspellings are auto-corrected against a 10,000-word English dictionary, with alternative suggestions shown as clickable chips when no confident match exists.
+Click the bar icon to open a search field, type a word, and press Enter. Definitions, phonetics, parts of speech, synonyms, and examples appear when a match is found. When no match exists, up to three similar words are suggested as clickable chips.
 
 ![Dictionary preview](screenshot.png)
 
@@ -28,7 +28,7 @@ omarchy bar move tristonarmstrong.dictionary --section center --after omarchy.cl
 
 - Click the bar icon to open the search panel
 - Type a word and press Enter to look it up
-- Misspelled words auto-correct when a close match exists; suggestions appear as chips when they don't
+- When no match exists, up to three similar words appear as chips you can click to retry
 - Press Esc to close the panel
 
 ## Validate
