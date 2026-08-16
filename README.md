@@ -2,7 +2,7 @@
 
 A Quickshell bar widget for Omarchy Quattro that looks up English word definitions from the Free Dictionary API.
 
-Click the bar icon to open a search field. Type a word and press Enter to look it up. Matches show definitions, phonetics, parts of speech, synonyms, and examples. When no match exists, up to three similar words are suggested as clickable chips.
+Click the bar icon to open a search field. Type a word and press Enter to look it up. Matches show the information returned by the Free Dictionary API. When no match exists, up to three similar words are suggested as clickable chips.
 
 ![Dictionary preview](screenshot.png)
 
