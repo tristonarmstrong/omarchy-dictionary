@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "id": "omarchy.dictionary",
-  "name": "Omarchy Dictionary",
+  "id": "tristonarmstrong.dictionary",
+  "name": "Dictionary",
   "version": "0.1.0",
   "author": "Triston Armstrong",
   "description": "Look up English word definitions from the Free Dictionary API",

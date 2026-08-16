@@ -16,8 +16,8 @@ import "Model.js" as Model
 // the field caret instead, Enter fires search, Esc closes the panel.
 Panel {
   id: root
-  moduleName: "alarm.dictionary"
-  ipcTarget: "alarm.dictionary"
+  moduleName: "tristonarmstrong.dictionary"
+  ipcTarget: "tristonarmstrong.dictionary"
   manageIpc: false
 
   property var anchorItem: null

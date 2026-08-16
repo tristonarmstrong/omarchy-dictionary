@@ -11,7 +11,7 @@ import "Model.js" as Model
 // aria of "look up a word" the moment it opens.
 BarWidget {
   id: root
-  moduleName: "alarm.dictionary"
+  moduleName: "tristonarmstrong.dictionary"
 
   // ---- Panel popup wiring. Bar.findPanelWidget keys on open/close/opened
   //      and Bar.requestPopout closes via closeForPopoutSwitch before
@@ -69,7 +69,7 @@ BarWidget {
   }
 
   IpcHandler {
-    target: "alarm.dictionary"
+    target: "tristonarmstrong.dictionary"
 
     function open(): void { root.open() }
     function close(): void { root.close() }
