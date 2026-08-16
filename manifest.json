@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "alarm.dictionary",
-  "name": "Dictionary",
+  "id": "omarchy.dictionary",
+  "name": "Omarchy Dictionary",
   "version": "0.1.0",
-  "author": "alarm",
+  "author": "Triston Armstrong",
   "description": "Look up English word definitions from the Free Dictionary API",
   "kinds": [
     "bar-widget"
