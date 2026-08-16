@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "alarm.dictionary",
+  "name": "Dictionary",
+  "version": "0.1.0",
+  "author": "alarm",
+  "description": "Look up English word definitions from the Free Dictionary API",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Dictionary",
+    "description": "Look up English word definitions from the Free Dictionary API",
+    "category": "Reference",
+    "allowMultiple": false
+  }
+}
