@@ -4,6 +4,8 @@ A Quickshell bar widget for Omarchy Quattro that looks up English word definitio
 
 Click the bar icon to open a search field, type a word, and press Enter. Definitions, phonetics, parts of speech, synonyms, and examples stream back as you go. Misspellings are auto-corrected against a 10,000-word English dictionary, with alternative suggestions shown as clickable chips when no confident match exists.
 
+![Dictionary preview](screenshot.png)
+
 ## Requirements
 
 - Omarchy Quattro
