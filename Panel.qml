@@ -83,6 +83,9 @@ Panel {
   property string statusMessage: ""
   property int variants: 0               // > 1 when the API returned more than one entry object
 
+  // Default "en" until the language switcher lands in a follow-up commit.
+  property string language: "en"
+
   // ---- Fuzzy state. Populated only when the user's exact query was a 404
   //      and the local wordlist surfaced closer candidates. suggestions is
   //      the chip list shown for the user to choose from; originalQuery is
@@ -149,7 +152,7 @@ Panel {
       root.isAutoMatched = false
       return
     }
-    var args = Model.lookupArgs(q)
+    var args = Model.lookupArgs(q, root.language)
     if (args.length === 0) return
 
     root.status = "loading"
@@ -208,7 +211,7 @@ Panel {
       waitForEnd: true
       onStreamFinished: {
         if (root.status !== "loading") return
-        var result = Model.parseResponse(text)
+        var result = Model.parseResponse(text, root.language)
         if (result && result.ok) {
           root.entry = result.entry
           root.variants = result.variants || 0
@@ -707,13 +710,14 @@ Column {
             spacing: Style.space(10)
 
             Text {
+              id: wordText
               text: root.entryWord()
               color: root.contentForeground
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.display
               font.bold: true
               elide: Text.ElideRight
-              width: parent.width - phoneticLabel.width - Style.space(10)
+              width: parent.width - phoneticLabel.width - sourceTag.width - Style.space(20)
               anchors.verticalCenter: parent.verticalCenter
             }
 
@@ -723,6 +727,19 @@ Column {
               color: Qt.darker(root.contentForeground, 1.3)
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.body
+              font.italic: true
+              anchors.verticalCenter: parent.verticalCenter
+              visible: text !== ""
+            }
+
+            // Small muted source tag (e.g. "Wiktionary") to make it obvious
+            // which data source filled the panel.
+            Text {
+              id: sourceTag
+              text: root.entry ? Model.sourceLabel(entry) : ""
+              color: Qt.darker(root.contentForeground, 1.55)
+              font.family: root.contentFontFamily
+              font.pixelSize: Style.font.caption
               font.italic: true
               anchors.verticalCenter: parent.verticalCenter
               visible: text !== ""

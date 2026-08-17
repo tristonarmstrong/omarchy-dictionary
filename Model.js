@@ -2,19 +2,31 @@
 // the same parse/build logic could be unit tested under node. The QML side
 // owns the network call (curl via Process), text-field state, and rendering.
 
-// Base URL for the Free Dictionary API (v2, English). No key required.
-// Rate-limited but generous for personal use.
+// Base URL for en.wiktionary.org's extracts endpoint. No key required;
+// MediaWiki rate-limits anonymous requests but it's generous for personal
+// use. The word is appended to the `titles=` param by lookupArgs.
+//
+// We do NOT pass `exsectionformat=plain` yet — keeping the `==` section
+// markers in the response is what lets us split the page into real
+// parts-of-speech later. This commit only flips the data source and
+// treats the extract as one big string. The next commit introduces the
+// section walker.
 function apiBase() {
-  return "https://api.dictionaryapi.dev/api/v2/entries/en/"
+  return "https://en.wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&format=json&titles="
 }
 
 // Build the curl argv for a single word lookup. encodeURIComponent is run by
 // curl itself via the URL we hand it, but pre-encoding here keeps the visible
-// fetch URL stable for logging / debugging.
+// fetch URL stable for logging / debugging. The User-Agent is required by
+// the Wikimedia API ToS.
 function lookupArgs(word) {
   var w = String(word || "").trim()
   if (w === "") return []
-  return ["curl", "-fsS", "--max-time", "5", apiBase() + encodeURIComponent(w)]
+  return [
+    "curl", "-fsS", "--max-time", "5",
+    "-H", "User-Agent: omarchy-dictionary/1.0 (Wiktionary prototype)",
+    apiBase() + encodeURIComponent(w)
+  ]
 }
 
 // Parse the API response. The success case is a top-level JSON array of entry
@@ -31,7 +43,38 @@ function parseResponse(raw) {
   } catch (e) {
     return { ok: false, kind: "invalid", error: "could not parse response" }
   }
-  if (data && typeof data === "object" && !Array.isArray(data) && data.title && data.message) {
+  if (!data || typeof data !== "object") {
+    return { ok: false, kind: "invalid", error: "could not parse response" }
+  }
+
+  // Wiktionary envelope: { query: { pages: { "<id>": { ... } } } }
+  if (data.query && data.query.pages && typeof data.query.pages === "object") {
+    var pages = data.query.pages
+    var pageIds = Object.keys(pages)
+    if (pageIds.length === 0) {
+      return { ok: false, kind: "empty", error: "no entry returned" }
+    }
+    var page = pages[pageIds[0]]
+    if (!page || page.missing !== undefined) {
+      return {
+        ok: false,
+        kind: "notfound",
+        error: "no entry for \"" + (page && page.title ? page.title : "word") + "\""
+      }
+    }
+    var extract = page.extract != null ? String(page.extract).trim() : ""
+    if (extract === "") {
+      return { ok: false, kind: "empty", error: "no extract returned" }
+    }
+    var entry = normalizeEntry(page)
+    if (!entry) return { ok: false, kind: "empty", error: "no entry returned" }
+    return { ok: true, entry: entry, variants: pageIds.length }
+  }
+
+  // Free Dictionary legacy shapes — preserved so rollback is a one-line
+  // change. The legacy Free Dictionary used a top-level JSON array of
+  // entries with `title`/`message` for not-found responses.
+  if (!Array.isArray(data) && data.title && data.message) {
     return {
       ok: false,
       kind: "notfound",
@@ -43,16 +86,50 @@ function parseResponse(raw) {
     return { ok: false, kind: "empty", error: "no entry returned" }
   }
 
-  var entry = normalizeEntry(data[0])
-  if (!entry) return { ok: false, kind: "empty", error: "no entry returned" }
-  return { ok: true, entry: entry, variants: data.length }
+  var legacyEntry = normalizeEntry(data[0])
+  if (!legacyEntry) return { ok: false, kind: "empty", error: "no entry returned" }
+  return { ok: true, entry: legacyEntry, variants: data.length }
 }
 
 // Normalize one entry into the shape the panel renders. Drops anything that
 // isn't a primitive string/array; the API occasionally returns nulls.
+//
+// Two shapes accepted:
+//   - Wiktionary page: { title, extract, ... }
+//     Extract is the plain-text body of an en.wiktionary.org entry. This
+//     commit packs it as a single meaning whose definition is the raw
+//     text — fine for the panel to render, but section-aware parsing
+//     (real parts-of-speech, etymology, pronunciation) lands in the next
+//     commit.
+//   - Free Dictionary entry: { word, phonetic, phonetics, meanings, ... }
+//     Existing logic.
 function normalizeEntry(raw) {
   if (!raw || typeof raw !== "object") return null
 
+  // Wiktionary branch.
+  if (raw.extract != null) {
+    var word = String(raw.title || "").trim()
+    if (word === "") return null
+    var extract = String(raw.extract).trim()
+    if (extract === "") return null
+    var phonetic = String(raw.phonetic || "").trim()
+    return {
+      word: word,
+      phonetic: phonetic,
+      audioUrl: "",
+      source: "wiktionary",
+      meanings: [
+        {
+          partOfSpeech: "",
+          definitions: [{ definition: extract, example: "", synonyms: [], antonyms: [] }],
+          synonyms: [],
+          antonyms: []
+        }
+      ]
+    }
+  }
+
+  // Free Dictionary branch.
   var word = String(raw.word || "").trim()
   if (word === "") return null
 
@@ -92,6 +169,7 @@ function normalizeEntry(raw) {
     word: word,
     phonetic: phonetic,
     audioUrl: audioUrl,
+    source: "dictionaryapi",
     meanings: meanings
   }
 }
@@ -151,6 +229,15 @@ function summaryLabel(entry) {
     }
   }
   return pos.join(" · ")
+}
+
+// Display label for the data source, surfaced as a small muted tag in the
+// panel header. Empty when the entry doesn't carry a source field.
+function sourceLabel(entry) {
+  if (!entry || !entry.source) return ""
+  if (entry.source === "wiktionary") return "Wiktionary"
+  if (entry.source === "dictionaryapi") return "Free Dictionary"
+  return String(entry.source)
 }
 
 // ---- Fuzzy match ----
