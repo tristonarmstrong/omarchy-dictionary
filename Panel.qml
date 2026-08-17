@@ -83,8 +83,10 @@ Panel {
   property string statusMessage: ""
   property int variants: 0               // > 1 when the API returned more than one entry object
 
-  // Default "en" until the language switcher lands in a follow-up commit.
-  property string language: "en"
+  // Target language for lookups. Driven by the dropdown in the popup
+  // header; default comes from Model.defaultLanguage so the panel and
+  // data layer stay in sync.
+  property string language: Model.defaultLanguage ? Model.defaultLanguage() : "en"
 
   // ---- Fuzzy state. Populated only when the user's exact query was a 404
   //      and the local wordlist surfaced closer candidates. suggestions is
@@ -327,10 +329,10 @@ Column {
       width: parent.width
       spacing: Style.space(14)
 
-        // ---------- Hero: title + entry summary (parts of speech) ----------
+        // ---------- Hero: title + entry summary (parts of speech) + lang dropdown
         Item {
           width: parent.width
-          implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight)
+          implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight, languageDropdown.implicitHeight)
 
           Text {
             id: heroIcon
@@ -346,7 +348,8 @@ Column {
             id: heroLabels
             anchors.left: heroIcon.right
             anchors.leftMargin: Style.space(14)
-            anchors.right: parent.right
+            anchors.right: languageDropdown.left
+            anchors.rightMargin: Style.space(10)
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(2)
 
@@ -370,7 +373,7 @@ Column {
                 if (root.status === "loading") return "looking up…"
                 if (root.status === "notfound") return "no definition"
                 if (root.status === "error") return "couldn't reach the API"
-                return "look up an English word"
+                return "look up a word"
               }
               color: Qt.darker(root.contentForeground, 1.4)
               font.family: root.contentFontFamily
@@ -379,6 +382,30 @@ Column {
               font.letterSpacing: 1.2
               elide: Text.ElideRight
               width: parent.width
+            }
+          }
+
+          // Language switcher in the top right of the popup. Data-driven
+          // from Model.languages() (sorted alphabetically by English
+          // label in JS) so adding a language is a one-entry edit.
+          // Picking one kicks off a fresh lookup when there's already a
+          // query, so changing language doesn't require retyping the
+          // word.
+          Dropdown {
+            id: languageDropdown
+            value: root.language
+            options: Model.languages()
+            showLabel: false
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            implicitWidth: Style.space(120)
+            onChanged: function(newValue) {
+              if (newValue === root.language) return
+              root.language = newValue
+              if (String(root.query || "").trim() !== "" && root.status !== "loading") {
+                searchDebounce.stop()
+                root.runLookup()
+              }
             }
           }
         }

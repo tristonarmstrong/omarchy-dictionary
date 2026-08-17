@@ -2,37 +2,89 @@
 // the same parse/build logic could be unit tested under node. The QML side
 // owns the network call (curl via Process), text-field state, and rendering.
 
-// Base URL for en.wiktionary.org's extracts endpoint. No key required;
-// MediaWiki rate-limits anonymous requests but it's generous for personal
-// use. The word is appended to the `titles=` param by lookupArgs.
+// ---- Languages ----
 //
-// We do NOT pass `exsectionformat=plain` yet — keeping the `==` section
-// markers in the response is what lets us split the page into real
-// parts-of-speech later. This commit only flips the data source and
-// treats the extract as one big string. The next commit introduces the
-// section walker.
-function apiBase() {
-  return "https://en.wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&format=json&titles="
+// Data-driven list of supported target languages. Each entry carries a
+// BC-47-ish `value` (the dropdown's stored value), an English `label`
+// for the menu, and the native `wikiName` — the heading Wiktionary uses
+// for its own language section in that edition (e.g. "English" on
+// en.wikt, "ภาษาไทย" on th.wikt, "日本語" on ja.wikt). The native name is
+// what the parser matches against, so getting it right is the
+// difference between a clean parse and an empty meaning[] on the
+// first lookup.
+//
+// Languages are listed roughly by coverage depth; the dropdown sorts
+// them alphabetically by English label. The Free Dictionary per-language
+// API isn't currently exercised — see apiBase below.
+var LANGUAGES = [
+  { value: "ar", label: "Arabic",        wikiName: "Arabic" },
+  { value: "bn", label: "Bengali",       wikiName: "Bengali" },
+  { value: "zh", label: "Chinese",       wikiName: "Chinese" },
+  { value: "nl", label: "Dutch",         wikiName: "Dutch" },
+  { value: "en", label: "English",       wikiName: "English" },
+  { value: "fr", label: "French",        wikiName: "French" },
+  { value: "de", label: "German",        wikiName: "German" },
+  { value: "hi", label: "Hindi",         wikiName: "Hindi" },
+  { value: "id", label: "Indonesian",    wikiName: "Indonesian" },
+  { value: "it", label: "Italian",       wikiName: "Italian" },
+  { value: "ja", label: "Japanese",      wikiName: "日本語" },
+  { value: "ko", label: "Korean",        wikiName: "한국어" },
+  { value: "ms", label: "Malay",         wikiName: "Malay" },
+  { value: "fa", label: "Persian",       wikiName: "Persian" },
+  { value: "pl", label: "Polish",        wikiName: "Polish" },
+  { value: "pt", label: "Portuguese",    wikiName: "Portuguese" },
+  { value: "ru", label: "Russian",       wikiName: "Russian" },
+  { value: "es", label: "Spanish",       wikiName: "Spanish" },
+  { value: "sw", label: "Swahili",       wikiName: "Swahili" },
+  { value: "sv", label: "Swedish",       wikiName: "Swedish" },
+  { value: "th", label: "Thai",          wikiName: "ภาษาไทย" },
+  { value: "tr", label: "Turkish",       wikiName: "Turkish" },
+  { value: "vi", label: "Vietnamese",    wikiName: "Vietnamese" }
+].sort(function (a, b) { return a.label.localeCompare(b.label) })
+
+var LANG_BY_VALUE = {}
+for (var i = 0; i < LANGUAGES.length; i++) LANG_BY_VALUE[LANGUAGES[i].value] = LANGUAGES[i]
+
+function langLabel(value) {
+  var l = LANG_BY_VALUE[String(value || "en").toLowerCase()]
+  return l ? l.label : String(value || "en")
+}
+function langWikiName(value) {
+  var l = LANG_BY_VALUE[String(value || "en").toLowerCase()]
+  return l ? l.wikiName : "English"
+}
+
+function defaultLanguage() { return "en" }
+
+function languages() { return LANGUAGES }
+
+// Base URL for the chosen Wiktionary edition's extracts endpoint. The
+// word is appended to the `titles=` param by lookupArgs. MediaWiki
+// rate-limits anonymous requests and requires a descriptive User-Agent
+// (Wikimedia ToS).
+function apiBase(langCode) {
+  var code = String(langCode || defaultLanguage()).trim().toLowerCase() || defaultLanguage()
+  return "https://" + code + ".wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&format=json&titles="
 }
 
 // Build the curl argv for a single word lookup. encodeURIComponent is run by
 // curl itself via the URL we hand it, but pre-encoding here keeps the visible
 // fetch URL stable for logging / debugging. The User-Agent is required by
 // the Wikimedia API ToS.
-function lookupArgs(word) {
+function lookupArgs(word, langCode) {
   var w = String(word || "").trim()
   if (w === "") return []
   return [
     "curl", "-fsS", "--max-time", "5",
     "-H", "User-Agent: omarchy-dictionary/1.0 (Wiktionary prototype)",
-    apiBase() + encodeURIComponent(w)
+    apiBase(langCode) + encodeURIComponent(w)
   ]
 }
 
 // Parse the API response. The success case is a top-level JSON array of entry
 // objects; the not-found case is a single error object with `title`/`message`.
 // Anything else (empty body, non-JSON, etc.) is treated as a fetch failure.
-function parseResponse(raw) {
+function parseResponse(raw, langCode) {
   var text = String(raw || "").trim()
   if (text === "") {
     return { ok: false, kind: "empty", error: "empty response" }
@@ -66,7 +118,7 @@ function parseResponse(raw) {
     if (extract === "") {
       return { ok: false, kind: "empty", error: "no extract returned" }
     }
-    var entry = normalizeEntry(page)
+    var entry = normalizeEntry(page, langCode)
     if (!entry) return { ok: false, kind: "empty", error: "no entry returned" }
     return { ok: true, entry: entry, variants: pageIds.length }
   }
@@ -86,7 +138,7 @@ function parseResponse(raw) {
     return { ok: false, kind: "empty", error: "no entry returned" }
   }
 
-  var legacyEntry = normalizeEntry(data[0])
+  var legacyEntry = normalizeEntry(data[0], langCode)
   if (!legacyEntry) return { ok: false, kind: "empty", error: "no entry returned" }
   return { ok: true, entry: legacyEntry, variants: data.length }
 }
@@ -102,14 +154,14 @@ function parseResponse(raw) {
 //     entry — see that function below for the section parser.
 //   - Free Dictionary entry: { word, phonetic, phonetics, meanings, ... }
 //     Existing logic.
-function normalizeEntry(raw) {
+function normalizeEntry(raw, langCode) {
   if (!raw || typeof raw !== "object") return null
 
   // Wiktionary branch.
   if (raw.extract != null) {
     var word = String(raw.title || "").trim()
     if (word === "") return null
-    return parseWiktionaryWikitext(word, raw.extract)
+    return parseWiktionaryWikitext(word, raw.extract, langCode)
   }
 
   // Free Dictionary branch.
@@ -378,18 +430,27 @@ function wiktExtractDefs(headword, body) {
   return defs
 }
 
-function parseWiktionaryWikitext(headword, rawText) {
+function parseWiktionaryWikitext(headword, rawText, langCode) {
   var top = parseSections(rawText)
   if (!top.length) return null
 
   // Prefer "== English ==". Fallback to the first level-2 (e.g. a word
-  // that has only Translingual or only one language entry); the parser
-  // stays strictly English-targeted here. A later commit wires the
-  // language switcher.
+  // Pick the language section for this lookup. Wiktionary renders the
+  // section heading in the edition's native script — "ภาษาไทย" on
+  // th.wiktionary, "日本語" on ja.wiktionary, "English" on en.wiktionary
+  // — so we match against LANG_BY_VALUE's `wikiName` rather than the
+  // English label. If that misses (e.g. wiktionary changed their naming
+  // convention) we fall back to the first level-2 section.
+  var target = String(langCode || defaultLanguage()).toLowerCase()
+  var targetName = langWikiName(target).toLowerCase()
+  var labelLower = langLabel(target).toLowerCase()
   var lang = null
   for (var i = 0; i < top.length; i++) {
-    if (top[i].level === 2 && top[i].title.toLowerCase() === "english") {
-      lang = top[i]
+    var t = top[i]
+    if (t.level !== 2) continue
+    var titleLower = t.title.toLowerCase()
+    if (titleLower === targetName || titleLower === labelLower) {
+      lang = t
       break
     }
   }
@@ -399,6 +460,12 @@ function parseWiktionaryWikitext(headword, rawText) {
     }
   }
   if (!lang) return null
+
+  // Strict mode for English (where POS names map to known keys). Loose
+  // mode elsewhere: any level-3 subsection whose body has real defs is
+  // surfaced with its raw title as the part-of-speech — useful until
+  // we accumulate per-language POS dictionaries (Thai/Japanese/etc.).
+  var loose = target !== "en"
 
   var meanings = []
   var phonetic = ""
@@ -427,6 +494,18 @@ function parseWiktionaryWikitext(headword, rawText) {
       }
       return
     }
+    if (loose && node.level === 3) {
+      var looseDefs = wiktExtractDefs(headword, node.body)
+      if (looseDefs.length && node.title.trim().length > 0 && node.title.trim().length < 30) {
+        meanings.push({
+          partOfSpeech: node.title.trim(),
+          definitions: looseDefs,
+          synonyms: [],
+          antonyms: []
+        })
+        return
+      }
+    }
     for (var i = 0; i < node.children.length; i++) visit(node.children[i])
   }
 
@@ -438,6 +517,7 @@ function parseWiktionaryWikitext(headword, rawText) {
     phonetic: phonetic,
     audioUrl: "",
     source: "wiktionary",
+    language: target,
     meanings: meanings
   }
 }
