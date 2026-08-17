@@ -96,11 +96,10 @@ function parseResponse(raw) {
 //
 // Two shapes accepted:
 //   - Wiktionary page: { title, extract, ... }
-//     Extract is the plain-text body of an en.wiktionary.org entry. This
-//     commit packs it as a single meaning whose definition is the raw
-//     text — fine for the panel to render, but section-aware parsing
-//     (real parts-of-speech, etymology, pronunciation) lands in the next
-//     commit.
+//     The extract is plain text with the MediaWiki `=`/`==`/`===` section
+//     markers preserved. parseWiktionaryWikitext walks it tree-wise
+//     (language → parts-of-speech → defs) and emits a clean structured
+//     entry — see that function below for the section parser.
 //   - Free Dictionary entry: { word, phonetic, phonetics, meanings, ... }
 //     Existing logic.
 function normalizeEntry(raw) {
@@ -110,23 +109,7 @@ function normalizeEntry(raw) {
   if (raw.extract != null) {
     var word = String(raw.title || "").trim()
     if (word === "") return null
-    var extract = String(raw.extract).trim()
-    if (extract === "") return null
-    var phonetic = String(raw.phonetic || "").trim()
-    return {
-      word: word,
-      phonetic: phonetic,
-      audioUrl: "",
-      source: "wiktionary",
-      meanings: [
-        {
-          partOfSpeech: "",
-          definitions: [{ definition: extract, example: "", synonyms: [], antonyms: [] }],
-          synonyms: [],
-          antonyms: []
-        }
-      ]
-    }
+    return parseWiktionaryWikitext(word, raw.extract)
   }
 
   // Free Dictionary branch.
@@ -217,6 +200,246 @@ function stringList(value) {
     if (s !== "") out.push(s)
   }
   return out
+}
+
+// ---- Wiktionary extract parser ----
+//
+// The extracts endpoint returns plain text with the MediaWiki section
+// markers left in: `==` for language, `===` for major subsections
+// inside a language (Pronunciation, Etymology, parts of speech), and
+// `====` for sub-subsections — often useful, since for words with
+// multiple etymologies the parts-of-speech sit at level 4
+// (`set`'s `Verb` under `Etymology 1`, for example). explaintext=1
+// already strips templates and formatting; what we have to do is
+// structural: turn this:
+//
+//   == English ==
+//   === Etymology 1 ===
+//   ==== Noun ====
+//   apple (plural apples)
+//   A common, round fruit...
+//
+// into:
+//
+//   { partOfSpeech: "noun", definitions: [{ definition: "A common, round fruit..." }] }
+
+function parseSections(text) {
+  text = String(text || "").replace(/\r\n/g, "\n").replace(/^\uFEFF/, "")
+  var root = { level: 1, title: "", body: "", children: [] }
+  var stack = [root]
+  var lines = text.split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var m = /^(={2,5})\s*([^{}=\n][^{}=\n]*?)\s*\1\s*$/.exec(lines[i])
+    if (m) {
+      var lvl = m[1].length
+      while (stack.length > 1 && stack[stack.length - 1].level >= lvl) stack.pop()
+      var sec = { level: lvl, title: String(m[2]).trim(), body: "", children: [] }
+      stack[stack.length - 1].children.push(sec)
+      stack.push(sec)
+    } else if (stack.length > 1) {
+      var top = stack[stack.length - 1]
+      top.body += (top.body ? "\n" : "") + lines[i]
+    }
+  }
+  return root.children
+}
+
+function stripInlineHeaders(text) {
+  return String(text || "").replace(/^={2,}[^\n=].{0,80}?={2,}\s*$/gm, "").trim()
+}
+
+var WIKT_POS_KEYS = {
+  noun: 1, verb: 1, adjective: 1, adj: 1, adverb: 1, adv: 1,
+  pronoun: 1, preposition: 1, postposition: 1, particle: 1,
+  interjection: 1, conjunction: 1, determiner: 1, article: 1,
+  numeral: 1, contraction: 1, letter: 1, symbol: 1, initialism: 1,
+  prefix: 1, suffix: 1, infix: 1, circumfix: 1, "combining form": 1,
+  phrase: 1, idiom: 1, proverb: 1, clause: 1, predicative: 1,
+  "auxiliary verb": 1, "modal verb": 1, "proper noun": 1, name: 1,
+  ordinal: 1, cardinal: 1, gerund: 1, participle: 1, infinitive: 1
+}
+var WIKT_SKIP_DROP = {
+  translations: 1, "derived terms": 1, "related terms": 1,
+  descendants: 1, references: 1, "further reading": 1,
+  anagrams: 1, conjugation: 1, declension: 1, inflection: 1,
+  "see also": 1, "external links": 1, quotations: 1,
+  homophones: 1, hyponyms: 1, hypernyms: 1,
+  meronyms: 1, holonyms: 1, troponyms: 1,
+  "coordinate terms": 1, "alternative forms": 1,
+  synonyms: 1, antonyms: 1, "usage notes": 1
+}
+
+function wiktCanonicalPos(t) {
+  if (t === "adj") return "adjective"
+  if (t === "adv") return "adverb"
+  if (t === "auxiliary verb" || t === "modal verb" || t === "gerund" ||
+      t === "participle" || t === "infinitive") return "verb"
+  if (t === "proper noun" || t === "name") return "noun"
+  return t
+}
+
+function wiktExtractIpa(body) {
+  var m = /IPA[^:\n]*:\s*\/([^\n/]+)\//.exec(body)
+  if (m) return "/" + m[1] + "/"
+  var m2 = /IPA[^:\n]*:\s*\[([^\n\]]+)\]/.exec(body)
+  if (m2) return "[" + m2[1] + "]"
+  return ""
+}
+
+function wiktIsInflectionLine(line, headword) {
+  if (!line || line.indexOf("(") < 0) return false
+  var openIdx = line.indexOf("(")
+  var closeIdx = line.lastIndexOf(")")
+  if (openIdx < 0 || closeIdx < 0 || closeIdx !== line.length - 1) return false
+  var head = line.substring(0, openIdx).trim().toLowerCase()
+  var annot = line.substring(openIdx + 1, closeIdx)
+  if (!head || !annot) return false
+  var heads = head.split(/[,\s]+/).filter(Boolean)
+  if (!heads.length) return null
+  var hw = String(headword || "").trim().toLowerCase()
+  var headOK = true
+  for (var i = 0; i < heads.length; i++) {
+    var p = heads[i]
+    if (p === hw || p === hw + "s" || p === hw + "es") continue
+    if (/^[a-z]+'$/.test(p)) continue
+    if (/^[a-z]+$/.test(p)) continue
+    headOK = false
+    break
+  }
+  if (!headOK) return false
+  return /third-person|present participle|simple past|past participle|plural|comparative|superlative|diminutive|feminine|masculine|neuter|genitive|nominative|accusative|dative|ablative|not comparable|UK|US|dialectal|imperative|auxiliary|conjugation|^by$|predicative/i.test(annot)
+}
+
+function wiktExtractDefs(headword, body) {
+  var t = stripInlineHeaders(String(body || "").replace(/\s+$/, "").trim())
+  if (!t) return []
+  var blocks = t.split(/\n\s*\n/)
+
+  if (blocks.length) {
+    var first = blocks[0]
+    var fLines = first.split("\n")
+    if (fLines.length === 1) {
+      var stripped = fLines[0].replace(/[^a-zA-Z\s,]/g, "").trim().toLowerCase()
+      var hw = String(headword || "").trim().toLowerCase()
+      var parts = stripped.split(/[,\s]+/).filter(Boolean)
+      var headMatch = parts.length > 0
+      for (var i = 0; i < parts.length && headMatch; i++) {
+        var p = parts[i]
+        if (p === hw || p === hw + "s" || p === hw + "es") continue
+        if (/^[a-z]+'$/.test(p)) continue
+        if (/^[a-z]+$/.test(p)) continue
+        headMatch = false
+      }
+      if (headMatch || wiktIsInflectionLine(first, headword)) blocks.shift()
+    }
+  }
+
+  var skipRE = /^\s*(Synonyms?|Antonyms?|Coordinate terms?|Related terms?|Derived terms?|For more quotations using this term|Usage notes|See also|External links|Trivia|Footnotes|Source|Notes|History|Compare|Quotations|Anagram)/i
+  var attrStartRE = /^(?:[12]\d{3}|January|February|March|April|May|June|July|August|September|October|November|December|c\.|circa|ca\.)\b/
+  var onlyLabelRE = /^\([A-Za-z][A-Za-z ,]*\)\s*$/
+  var numberRangeRE = /^\d+\s*-\s*\d+,\s*\d/
+
+  var defs = []
+  function emit(text) {
+    var s = String(text || "").replace(/\s+$/, "").trim()
+    if (!s) return
+    if (/^\[[^\]]+\]\s*$/.test(s)) return
+    if (attrStartRE.test(s)) return
+    if (onlyLabelRE.test(s)) return
+    if (numberRangeRE.test(s)) return
+    if (s.length < 8) return
+    defs.push({ definition: s, example: "", synonyms: [], antonyms: [] })
+  }
+
+  for (var i = 0; i < blocks.length; i++) {
+    var block = blocks[i].trim()
+    if (!block) continue
+    if (/^Alternative forms\s+of\s+/i.test(block)) continue
+    var bLines = block.split("\n")
+    for (var j = 0; j < bLines.length; j++) {
+      var line = bLines[j].replace(/\s+$/, "").trim()
+      if (!line) continue
+      if (skipRE.test(line)) continue
+      if (line.charAt(0) === "*") line = line.substring(1).trim()
+      if (attrStartRE.test(line)) {
+        if (j + 1 < bLines.length) {
+          var next = bLines[j + 1].replace(/\s+$/, "").trim()
+          if (next && !skipRE.test(next) && !attrStartRE.test(next) &&
+              !onlyLabelRE.test(next) && next.length >= 12) {
+            emit(line + " — " + next)
+            j++
+          }
+        }
+        continue
+      }
+      emit(line)
+    }
+  }
+  return defs
+}
+
+function parseWiktionaryWikitext(headword, rawText) {
+  var top = parseSections(rawText)
+  if (!top.length) return null
+
+  // Prefer "== English ==". Fallback to the first level-2 (e.g. a word
+  // that has only Translingual or only one language entry); the parser
+  // stays strictly English-targeted here. A later commit wires the
+  // language switcher.
+  var lang = null
+  for (var i = 0; i < top.length; i++) {
+    if (top[i].level === 2 && top[i].title.toLowerCase() === "english") {
+      lang = top[i]
+      break
+    }
+  }
+  if (!lang) {
+    for (var i = 0; i < top.length; i++) {
+      if (top[i].level === 2) { lang = top[i]; break }
+    }
+  }
+  if (!lang) return null
+
+  var meanings = []
+  var phonetic = ""
+
+  function visit(node) {
+    var key = node.title.toLowerCase().trim()
+    var keyBase = key.replace(/\s+\d+$/, "")
+    if (key === "pronunciation") {
+      phonetic = wiktExtractIpa(node.body) || phonetic
+      return
+    }
+    if (key === "etymology" || keyBase === "etymology") {
+      for (var i = 0; i < node.children.length; i++) visit(node.children[i])
+      return
+    }
+    if (WIKT_SKIP_DROP[key]) return
+    if (WIKT_POS_KEYS[key]) {
+      var defs = wiktExtractDefs(headword, node.body)
+      if (defs.length) {
+        meanings.push({
+          partOfSpeech: wiktCanonicalPos(key),
+          definitions: defs,
+          synonyms: [],
+          antonyms: []
+        })
+      }
+      return
+    }
+    for (var i = 0; i < node.children.length; i++) visit(node.children[i])
+  }
+
+  for (var i = 0; i < lang.children.length; i++) visit(lang.children[i])
+
+  if (!meanings.length) return null
+  return {
+    word: String(headword || "").trim(),
+    phonetic: phonetic,
+    audioUrl: "",
+    source: "wiktionary",
+    meanings: meanings
+  }
 }
 
 // Short status line for the hero label under the search box.
