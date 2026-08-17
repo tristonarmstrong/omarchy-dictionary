@@ -402,9 +402,27 @@ Column {
             onChanged: function(newValue) {
               if (newValue === root.language) return
               root.language = newValue
-              if (String(root.query || "").trim() !== "" && root.status !== "loading") {
-                searchDebounce.stop()
-                root.runLookup()
+              // The previously-shown entry (or in-flight lookup) was for
+              // the prior language and is no longer meaningful under the
+              // new one. Cancel any in-flight proc, clear the entry,
+              // empty the search field, and reset to idle so the user
+              // starts fresh with the new language.
+              if (lookupProc.running) lookupProc.running = false
+              var hadResult = root.status === "ok" || root.status === "notfound" ||
+                              root.status === "error" || root.status === "suggestions" ||
+                              root.status === "loading"
+              if (hadResult) {
+                root.entry = null
+                root.variants = 0
+                root.status = "idle"
+                root.statusMessage = ""
+                root.suggestions = []
+                root.originalQuery = ""
+                root.isAutoMatched = false
+                root.programmaticEdit = true
+                searchField.text = ""
+                root.programmaticEdit = false
+                root.query = ""
               }
             }
           }
