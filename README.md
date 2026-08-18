@@ -90,21 +90,6 @@ in-process; the lookup script's pure functions are exercised in a
 subprocess with stubbed `wl-paste` and `omarchy-shell` so the suite
 needs no Wayland session or running shell.
 
-## Files
-
-```
-BarWidget.qml                  bar widget (icon + IPC handler + auto-install)
-Panel.qml                      popup panel (search field, entry display)
-Model.js                       Wiktionary parser, fuzzy match, i18n (692 lines)
-wordlist.js                    ~10K English words for fuzzy match (zero-config install target)
-scripts/omarchy-dictionary-lookup   global hotkey script (auto-installed to ~/.local/bin/)
-manifest.json                  plugin manifest (version, entry points)
-tests/lint.test.js             QML import + const/let lint
-tests/model.test.js            240 Model.js unit tests
-tests/lookup.test.js           22 lookup-script tests
-tests/run.sh                   test runner
-```
-
 ## Remove
 
 ```sh
