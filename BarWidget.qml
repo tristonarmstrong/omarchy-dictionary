@@ -61,10 +61,17 @@ BarWidget {
   //      copy it manually, we install it to ~/.local/bin/ on first load.
   //      Hyprland binding is the only remaining manual step (see README).
   //      The install is idempotent: a quick cmp -s skips it when the script
-  //      already matches the bundled copy.
+  //      already matches the bundled copy. The trailing echo only fires when
+  //      install(1) actually ran — we use that as the trigger for the
+  //      notification below, so subsequent restarts are silent.
   //
   //      Qt.resolvedUrl returns a file:// URL which the shell can't read
   //      directly — strip the scheme so install(1) sees a plain path.
+  function notify(title, body) {
+    var bin = Quickshell.env("OMARCHY_PATH") + "/bin/omarchy-notification-send"
+    Quickshell.execDetached([bin, title, body])
+  }
+
   Process {
     id: installProc
     property string scriptPath: String(Qt.resolvedUrl("scripts/omarchy-dictionary-lookup")).replace(/^file:\/\//, "/")
@@ -73,9 +80,17 @@ BarWidget {
       "dst=\"$home/.local/bin/omarchy-dictionary-lookup\"; " +
       "mkdir -p \"$home/.local/bin\" && " +
       "if [ ! -f \"$dst\" ] || ! cmp -s '" + scriptPath + "' \"$dst\"; then " +
-      "  install -m755 '" + scriptPath + "' \"$dst\"; " +
+      "  install -m755 '" + scriptPath + "' \"$dst\" && echo installed; " +
       "fi"
     ]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        if (text.indexOf("installed") !== -1) {
+          root.notify("Dictionary", "Installed system script: ~/.local/bin/omarchy-dictionary-lookup")
+        }
+      }
+    }
   }
 
   Component.onCompleted: installProc.running = true
