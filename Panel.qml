@@ -576,7 +576,7 @@ Column {
 
               Text {
                 width: parent.width
-                text: "Definitions come from api.dictionaryapi.dev — no account or key required."
+                text: "Definitions come from *.wiktionary.org/w/api.php* — no account or key required."
                 color: Qt.darker(root.contentForeground, 1.7)
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.caption
