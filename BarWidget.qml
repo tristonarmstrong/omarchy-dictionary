@@ -3,7 +3,6 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
-import "Model.js" as Model
 
 // Bar widget for the dictionary plugin: a magnifying-glass glyph that toggles
 // the search panel. The visible bar item is just an icon, so the WidgetButton

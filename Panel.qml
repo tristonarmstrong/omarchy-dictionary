@@ -5,6 +5,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
+import "wordlist.js"
 
 // Dictionary search panel. The bar widget owns a magnify glyph that toggles
 // this popup; everything user-facing lives here — the search field, the
@@ -64,12 +65,7 @@ Panel {
     if (searchField.text !== q) searchField.text = q
     if (q === "") {
       lookupProc.running = false
-      root.status = "idle"
-      root.statusMessage = ""
-      root.entry = null
-      root.suggestions = []
-      root.originalQuery = ""
-      root.isAutoMatched = false
+      root.resetResults()
       return
     }
     runLookup()
@@ -111,6 +107,24 @@ Panel {
   readonly property int panelMaxHeight: Style.space(620)
   readonly property int searchDelayMs: 250
 
+  // ---- Reset all result-related state back to idle. Called from search(),
+  //      runLookup(), applyEdited(), and the language-change handler.
+  function resetResults() {
+    root.entry = null
+    root.variants = 0
+    root.status = "idle"
+    root.statusMessage = ""
+    root.suggestions = []
+    root.originalQuery = ""
+    root.isAutoMatched = false
+  }
+
+  // Inject the bundled wordlist into Model.js so fuzzyMatch() can use it.
+  Component.onCompleted: {
+    if (typeof Model.setWordlist === "function" && typeof ENGLISH_WORDLIST !== "undefined")
+      Model.setWordlist(ENGLISH_WORDLIST)
+  }
+
   // ---- Bindings need the source data checked before any property
   //      access; pulling the wording into functions lets the body
   //      short-circuit cleanly when entry is null mid-fetch (the
@@ -146,12 +160,7 @@ Panel {
     root.query = q
     if (q === "") {
       lookupProc.running = false
-      root.status = "idle"
-      root.statusMessage = ""
-      root.entry = null
-      root.suggestions = []
-      root.originalQuery = ""
-      root.isAutoMatched = false
+      root.resetResults()
       return
     }
     var args = Model.lookupArgs(q, root.language)
@@ -159,12 +168,8 @@ Panel {
 
     root.status = "loading"
     root.statusMessage = ""
-    root.entry = null
-    root.variants = 0
-    // Fresh lookup: drop fuzzy state. The auto-match recovery path below
-    // repopulates originalQuery if it decides to silently rewrite q.
-    root.suggestions = []
-    root.isAutoMatched = false
+    root.resetResults()
+    root.status = "loading"
     if (lookupProc.running) lookupProc.running = false
     lookupProc.command = args
     lookupProc.running = true
@@ -182,12 +187,7 @@ Panel {
     root.query = q
     if (q === "") {
       lookupProc.running = false
-      root.status = "idle"
-      root.statusMessage = ""
-      root.entry = null
-      root.suggestions = []
-      root.originalQuery = ""
-      root.isAutoMatched = false
+      root.resetResults()
       return
     }
     if (searchDebounce.running) searchDebounce.stop()
@@ -195,12 +195,7 @@ Panel {
     // half-typed words make noise — but clear any in-flight result so the
     // panel doesn't show stale data next to fresh text.
     if (root.status === "ok" || root.status === "notfound" || root.status === "error" || root.status === "suggestions") {
-      root.entry = null
-      root.status = "idle"
-      root.statusMessage = ""
-      root.suggestions = []
-      root.originalQuery = ""
-      root.isAutoMatched = false
+      root.resetResults()
     }
   }
 
@@ -412,13 +407,7 @@ Column {
                               root.status === "error" || root.status === "suggestions" ||
                               root.status === "loading"
               if (hadResult) {
-                root.entry = null
-                root.variants = 0
-                root.status = "idle"
-                root.statusMessage = ""
-                root.suggestions = []
-                root.originalQuery = ""
-                root.isAutoMatched = false
+                root.resetResults()
                 root.programmaticEdit = true
                 searchField.text = ""
                 root.programmaticEdit = false

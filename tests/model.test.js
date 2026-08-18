@@ -4,9 +4,9 @@
 // Comprehensive test suite for Model.js — the pure-JS data layer.
 // Run:  node tests/model.test.js
 //
-// The loader strips the giant ENGLISH_WORDLIST down to a small synthetic
-// list so tests execute in < 50 ms.  All public helpers are exercised via
-// the module.exports surface — no QML, no network.
+// The loader injects a tiny synthetic wordlist via setWordlist() so tests
+// execute in < 50 ms.  All public helpers are exercised via the
+// module.exports surface — no QML, no network.
 
 var fs   = require("fs");
 var path = require("path");
@@ -15,8 +15,8 @@ var assert = require("assert");
 // ── Load Model.js under test ────────────────────────────────────────────────
 var src = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8");
 
-// Replace the large wordlist with a tiny synthetic one that still lets the
-// fuzzy-match code exercise its prefilter / scoring logic.
+// Tiny synthetic wordlist that still lets the fuzzy-match code exercise its
+// prefilter / scoring logic.
 var TINY_WORDLIST = [
   '"hello","world","set","run","bank","cat","dog","go","see","the",'
   + '"a","an","in","on","at","to","for","of","is","it","you","we",'
@@ -25,7 +25,6 @@ var TINY_WORDLIST = [
 ].join("");
 
 var stripped = src
-  .replace(/var ENGLISH_WORDLIST = \[[\s\S]*?\]/, "var ENGLISH_WORDLIST = [" + TINY_WORDLIST + "]")
   .replace(/^const /gm, "var ");
 
 // Model.js defines all public symbols as top-level var/function declarations
@@ -36,13 +35,16 @@ var PUBLIC_SYMBOLS = [
   "apiBase","lookupArgs","parseResponse","normalizeEntry","normalizeMeaning","normalizeDefinition","stringList",
   "parseSections","stripInlineHeaders","WIKT_POS_KEYS","WIKT_SKIP_DROP",
   "wiktCanonicalPos","wiktExtractIpa","wiktIsInflectionLine","wiktExtractDefs",
-  "parseWiktionaryWikitext","summaryLabel","sourceLabel","levenshtein","fuzzyMatch"
+  "parseWiktionaryWikitext","summaryLabel","sourceLabel","levenshtein","fuzzyMatch","setWordlist"
 ];
 var exportLines = PUBLIC_SYMBOLS.map(function (s) { return "exports." + s + " = " + s + ";"; }).join("\n");
 
 var M = {};
 var fn = new Function("module", "exports", stripped + "\n" + exportLines + "\nmodule.exports = exports;");
 fn.call(M, M, M);
+
+// Inject the tiny wordlist so fuzzyMatch works in tests.
+M.setWordlist(["hello","world","set","run","bank","cat","dog","go","see","the","a","an","in","on","at","to","for","of","is","it","you","we","he","she","my","me","no","not","but","or","so","if","do","up","be","am","as","by","good","food","hood","mood","blood","flood"]);
 
 // ── Minimal test harness ────────────────────────────────────────────────────
 var _group = "";
