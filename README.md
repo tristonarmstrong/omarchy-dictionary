@@ -7,11 +7,8 @@ on your system.
 
 Click the bar icon to open a search field. Type a word and press Enter to
 look it up. Use the language dropdown in the panel header to switch editions
-between English, Spanish, French, German, Portuguese, Italian, Russian,
-Japanese, Chinese, Korean, Arabic, Hindi, Swedish, Dutch, Polish, Czech,
-Finnish, Greek, Hebrew, Indonesian, Romanian, Turkish, and Ukrainian.
-When no match exists, up to three similar words are suggested as clickable
-chips.
+between [supported languages](#supported-languages). When no match exists,
+up to three similar words are suggested as clickable chips.
 
 ![Dictionary preview](preview.png)
 
@@ -117,6 +114,38 @@ omarchy plugin remove tristonarmstrong.dictionary --yes
 Removes the plugin and (on next shell restart) auto-uninstalls nothing —
 the lookup script at `~/.local/bin/omarchy-dictionary-lookup` stays; remove
 it manually if you want.
+
+## Supported languages
+
+23 Wiktionary editions, alphabetically by English label:
+
+| Language | Code |
+|---|---|
+| Arabic | `ar` |
+| Bengali | `bn` |
+| Chinese | `zh` |
+| Dutch | `nl` |
+| English | `en` |
+| French | `fr` |
+| German | `de` |
+| Hindi | `hi` |
+| Indonesian | `id` |
+| Italian | `it` |
+| Japanese | `ja` |
+| Korean | `ko` |
+| Malay | `ms` |
+| Persian | `fa` |
+| Polish | `pl` |
+| Portuguese | `pt` |
+| Russian | `ru` |
+| Spanish | `es` |
+| Swahili | `sw` |
+| Swedish | `sv` |
+| Thai | `th` |
+| Turkish | `tr` |
+| Vietnamese | `vi` |
+
+To add another edition, append it to the `LANGUAGES` array in `Model.js`.
 
 ## License
 
