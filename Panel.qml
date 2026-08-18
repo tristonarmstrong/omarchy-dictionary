@@ -442,7 +442,7 @@ Column {
               spacing: Style.space(10)
 
               Text {
-                text: "🔍"
+                text: "󰍉"
                 color: Qt.darker(root.contentForeground, 1.3)
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.title
