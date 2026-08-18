@@ -160,6 +160,65 @@ test("returns empty string when no socket exists", () => {
   }
 });
 
+// ── Main-flow tests ──────────────────────────────────────────────────────────
+// Verify which IPC command the script invokes based on whether a word was
+// extracted. We stub `wl-paste` (to inject a selection) and `omarchy-shell`
+// (to capture the call) before sourcing the script.
+function callMainFlow(selectionValue) {
+  var stubDir = fs.mkdtempSync(path.join(require("os").tmpdir(), "lookup-stubs-"));
+  var capture = path.join(stubDir, "capture.txt");
+  // wl-paste stub: just echoes the configured selection value.
+  var wlPaste = path.join(stubDir, "wl-paste");
+  fs.writeFileSync(wlPaste, "#!/bin/bash\necho " + JSON.stringify(selectionValue) + "\n");
+  fs.chmodSync(wlPaste, 0o755);
+  // omarchy-shell stub: records the args, exits 0.
+  var omarchyShell = path.join(stubDir, "omarchy-shell");
+  fs.writeFileSync(omarchyShell,
+    "#!/bin/bash\n" +
+    "echo \"$@\" > " + capture + "\n" +
+    "exit 0\n");
+  fs.chmodSync(omarchyShell, 0o755);
+
+  var src = fs.readFileSync(SCRIPT, "utf8")
+    .replace(/^set -euo pipefail$/m, ""); // don't strict-fail on the stub
+  var tmp = path.join(stubDir, "script.sh");
+  fs.writeFileSync(tmp, src);
+
+  var env = Object.assign({}, process.env, {
+    PATH: stubDir + ":" + (process.env.PATH || ""),
+    WAYLAND_DISPLAY: "wayland-1"
+  });
+
+  try {
+    execSync("bash " + tmp, { encoding: "utf8", env: env });
+    return fs.existsSync(capture) ? fs.readFileSync(capture, "utf8").trim() : "";
+  } finally {
+    fs.rmSync(stubDir, { recursive: true, force: true });
+  }
+}
+
+group("main flow — IPC dispatch");
+
+test("with a selection: calls 'search' with the extracted word", () => {
+  var result = callMainFlow("hello world");
+  assert.strictEqual(result, "-q tristonarmstrong.dictionary search hello");
+});
+
+test("with punctuation-only selection: calls 'toggle' to open empty popup", () => {
+  var result = callMainFlow("!@#$%");
+  assert.strictEqual(result, "-q tristonarmstrong.dictionary toggle");
+});
+
+test("with empty selection: calls 'toggle' to open empty popup", () => {
+  var result = callMainFlow("");
+  assert.strictEqual(result, "-q tristonarmstrong.dictionary toggle");
+});
+
+test("with whitespace-only selection: calls 'toggle'", () => {
+  var result = callMainFlow("   ");
+  assert.strictEqual(result, "-q tristonarmstrong.dictionary toggle");
+});
+
 // ── Summary ─────────────────────────────────────────────────────────────────
 console.log("\n" + (_pass + _fail) + " total, " + _pass + " passed, " + _fail + " failed");
 if (_fail > 0) process.exit(1);

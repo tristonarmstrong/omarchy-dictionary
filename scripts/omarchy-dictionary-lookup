@@ -50,10 +50,13 @@ read_selection() {
   printf '%s' "$sel"
 }
 
-# Main: extract → send to plugin via IPC. -q keeps the hotkey silent on
+# Main: with a selection → search the extracted word. Without one → just
+# open the popup so the user can type. -q keeps the hotkey silent on
 # failure (shell not running, plugin disabled, etc.).
 word=$(extract_word "$(read_selection)")
 
 if [[ -n "$word" ]]; then
   exec omarchy-shell -q tristonarmstrong.dictionary search "$word"
 fi
+
+exec omarchy-shell -q tristonarmstrong.dictionary toggle
