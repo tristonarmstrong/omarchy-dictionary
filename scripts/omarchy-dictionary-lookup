@@ -13,6 +13,23 @@
 
 set -euo pipefail
 
+# wayland_display
+#   Hyprland doesn't export WAYLAND_DISPLAY to commands it spawns (unlike
+#   processes launched from a terminal). wl-paste then defaults to
+#   `wayland-0`, which is usually wrong. Recover the real display name
+#   from the compositor socket, matching what omarchy-shell does.
+wayland_display() {
+  if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+    printf '%s' "$WAYLAND_DISPLAY"
+    return
+  fi
+  local socket
+  socket=$(ls -t "${XDG_RUNTIME_DIR:-/run/user/$UID}"/wayland-[0-9]* 2>/dev/null | grep -v '\.lock$' | head -n1 || true)
+  if [[ -n "$socket" ]]; then
+    printf '%s' "${socket##*/}"
+  fi
+}
+
 # extract_word <string>
 #   Returns the first run of ASCII letters in $1, or empty string if none.
 #   Pure function — no I/O, no side effects.
@@ -26,9 +43,9 @@ extract_word() {
 #   (e.g. no compositor) is suppressed to keep the hotkey silent.
 read_selection() {
   local sel
-  sel=$(wl-paste -p --no-newline 2>/dev/null || true)
+  sel=$(WAYLAND_DISPLAY="$(wayland_display)" wl-paste -p --no-newline 2>/dev/null || true)
   if [[ -z "$sel" ]]; then
-    sel=$(wl-paste --no-newline 2>/dev/null || true)
+    sel=$(WAYLAND_DISPLAY="$(wayland_display)" wl-paste --no-newline 2>/dev/null || true)
   fi
   printf '%s' "$sel"
 }

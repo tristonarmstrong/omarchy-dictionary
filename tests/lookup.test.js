@@ -114,6 +114,52 @@ test("unicode letters are excluded (script targets ASCII)", () => {
   assert.strictEqual(callExtractWord("café"), "caf");
 });
 
+// ── wayland_display helper tests ─────────────────────────────────────────────
+// Same trick: source the script's functions, then call wayland_display
+// with controlled environment. Write to a temp file so bash -c escaping
+// doesn't break on single quotes in the comments.
+var _sourcedTmp = fs.mkdtempSync(path.join(require("os").tmpdir(), "lookup-src-"));
+function writeSourced(extra) {
+  var src = fs.readFileSync(SCRIPT, "utf8")
+    .replace(/^word=.*$/m, "")
+    .replace(/^exec.*$/m, "")
+    .replace(/^set -euo pipefail$/m, "");
+  var tmp = path.join(_sourcedTmp, "src-" + Math.random().toString(36).slice(2) + ".sh");
+  fs.writeFileSync(tmp, src + "\n" + extra);
+  return tmp;
+}
+function callWaylandDisplay(envOverrides) {
+  var tmp = writeSourced('echo "$(wayland_display)"');
+  var env = Object.assign({}, process.env, envOverrides);
+  if (!("WAYLAND_DISPLAY" in envOverrides)) delete env.WAYLAND_DISPLAY;
+  return execSync("bash " + tmp, { encoding: "utf8", env: env }).trim();
+}
+
+group("wayland_display — Hyprland environment quirk");
+
+test("passes through WAYLAND_DISPLAY when already set", () => {
+  assert.strictEqual(callWaylandDisplay({ WAYLAND_DISPLAY: "wayland-9" }), "wayland-9");
+});
+
+test("discovers socket from XDG_RUNTIME_DIR when WAYLAND_DISPLAY unset", () => {
+  // The test machine has at least one wayland-N socket (we're running on
+  // Wayland). Verify the discovery path returns a matching name.
+  var found = callWaylandDisplay({ XDG_RUNTIME_DIR: "/run/user/" + process.getuid() });
+  assert.ok(/^wayland-\d+$/.test(found),
+    "expected wayland-N, got: '" + found + "'");
+});
+
+test("returns empty string when no socket exists", () => {
+  // Point XDG_RUNTIME_DIR at an empty tmpdir with no wayland sockets.
+  var tmp = fs.mkdtempSync(path.join(require("os").tmpdir(), "wl-test-"));
+  try {
+    var found = callWaylandDisplay({ XDG_RUNTIME_DIR: tmp });
+    assert.strictEqual(found, "");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 // ── Summary ─────────────────────────────────────────────────────────────────
 console.log("\n" + (_pass + _fail) + " total, " + _pass + " passed, " + _fail + " failed");
 if (_fail > 0) process.exit(1);
