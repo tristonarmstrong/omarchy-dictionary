@@ -56,6 +56,30 @@ BarWidget {
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
 
+  // ---- Auto-install the selection-lookup script. The hotkey path needs
+  //      `omarchy-dictionary-lookup` on $PATH; rather than ask the user to
+  //      copy it manually, we install it to ~/.local/bin/ on first load.
+  //      Hyprland binding is the only remaining manual step (see README).
+  //      The install is idempotent: a quick cmp -s skips it when the script
+  //      already matches the bundled copy.
+  //
+  //      Qt.resolvedUrl returns a file:// URL which the shell can't read
+  //      directly — strip the scheme so install(1) sees a plain path.
+  Process {
+    id: installProc
+    property string scriptPath: String(Qt.resolvedUrl("scripts/omarchy-dictionary-lookup")).replace(/^file:\/\//, "/")
+    command: ["sh", "-c",
+      "home=\"${HOME:-" + (Quickshell.env.HOME || "/root") + "}\"; " +
+      "dst=\"$home/.local/bin/omarchy-dictionary-lookup\"; " +
+      "mkdir -p \"$home/.local/bin\" && " +
+      "if [ ! -f \"$dst\" ] || ! cmp -s '" + scriptPath + "' \"$dst\"; then " +
+      "  install -m755 '" + scriptPath + "' \"$dst\"; " +
+      "fi"
+    ]
+  }
+
+  Component.onCompleted: installProc.running = true
+
   Loader {
     id: panelLoader
     active: true

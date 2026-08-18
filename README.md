@@ -54,9 +54,10 @@ it to the plugin via IPC. Falls back to the clipboard if the primary
 selection is empty. Install the script to `~/.local/bin` (or any directory
 on your `$PATH`) and `chmod +x` it.
 
-```sh
-install -m755 scripts/omarchy-dictionary-lookup ~/.local/bin/
-```
+The plugin auto-installs the bundled script to `~/.local/bin/` on first
+load (idempotent — re-runs only when the bundled copy changes), so no
+manual install step is needed. Add the keybinding line to your Hypr
+config and you're done.
 
 ## Validate
 
@@ -74,7 +75,7 @@ bash tests/run.sh
 ```
 
 Runs three suites — QML lint checks (2), Model.js unit tests (240), and
-the lookup-script word extraction tests (15).
+the lookup-script word extraction tests (22).
 
 ## Remove
 
