@@ -1,21 +1,25 @@
 # Omarchy Dictionary
 
 A Quickshell bar widget for Omarchy that looks up word definitions from
-Wiktionary, with support for 23 language editions and a global hotkey for
-looking up highlighted text anywhere on your system.
+Wiktionary, with support for 23 language editions, fuzzy "did you mean?"
+suggestions, and a global hotkey for looking up highlighted text anywhere
+on your system.
 
 Click the bar icon to open a search field. Type a word and press Enter to
 look it up. Use the language dropdown in the panel header to switch editions
-(English, Spanish, Japanese, French, German, Arabic, Hindi, and more). When
-no match exists, up to three similar words are suggested as clickable chips.
+between English, Spanish, French, German, Portuguese, Italian, Russian,
+Japanese, Chinese, Korean, Arabic, Hindi, Swedish, Dutch, Polish, Czech,
+Finnish, Greek, Hebrew, Indonesian, Romanian, Turkish, and Ukrainian.
+When no match exists, up to three similar words are suggested as clickable
+chips.
 
 ![Dictionary preview](preview.png)
 
 ## Requirements
 
 - Omarchy (uses the Quickshell bar plugin system)
-- Network access to `*.wiktionary.org` (no API key required)
-- `wl-clipboard` (for the global selection hotkey — preinstalled on Omarchy)
+- Network access to `*.wiktionary.org` — no API key or signup required
+- `wl-clipboard` for the global selection hotkey — preinstalled on Omarchy
 
 ## Install
 
@@ -23,7 +27,7 @@ no match exists, up to three similar words are suggested as clickable chips.
 omarchy plugin add https://github.com/tristonarmstrong/omarchy-dictionary.git --enable
 ```
 
-If needed, place it in the center section after the clock:
+Optionally place it in the center section after the clock:
 
 ```sh
 omarchy bar move tristonarmstrong.dictionary --section center --after omarchy.clock
@@ -35,8 +39,9 @@ omarchy bar move tristonarmstrong.dictionary --section center --after omarchy.cl
 
 - Click the bar icon to open the search panel
 - Type a word and press Enter to look it up
-- Use the dropdown in the panel header to switch language editions
-- When no match exists, up to three similar words appear as chips you can click to retry
+- Use the language dropdown in the panel header to switch editions
+- When no match exists, up to three similar words appear as chips you can
+  click to retry
 - Press Esc to close the panel
 
 ### Global selection hotkey
@@ -48,16 +53,24 @@ word in any application:
 o.bind("SUPER + D", "Look up selection in dictionary", "omarchy-dictionary-lookup")
 ```
 
-The bundled `scripts/omarchy-dictionary-lookup` reads the Wayland primary
-selection (highlighted text), extracts the first alphabetic word, and sends
-it to the plugin via IPC. Falls back to the clipboard if the primary
-selection is empty. Install the script to `~/.local/bin` (or any directory
-on your `$PATH`) and `chmod +x` it.
+The plugin auto-installs the bundled `scripts/omarchy-dictionary-lookup` to
+`~/.local/bin/` on first load (idempotent — re-runs only when the bundled
+copy changes), so no manual install step is needed. The script reads the
+Wayland primary selection (highlighted text), falls back to the clipboard
+if empty, extracts the first alphabetic word, and opens the dictionary
+panel with that word pre-filled. With nothing selected it just opens the
+empty panel.
 
-The plugin auto-installs the bundled script to `~/.local/bin/` on first
-load (idempotent — re-runs only when the bundled copy changes), so no
-manual install step is needed. Add the keybinding line to your Hypr
-config and you're done.
+### IPC
+
+External callers can drive the plugin via `omarchy-shell`:
+
+```sh
+omarchy-shell tristonarmstrong.dictionary search <word>   # search and open
+omarchy-shell tristonarmstrong.dictionary open           # open empty panel
+omarchy-shell tristonarmstrong.dictionary toggle         # toggle panel
+omarchy-shell tristonarmstrong.dictionary close          # close panel
+```
 
 ## Validate
 
@@ -75,13 +88,35 @@ bash tests/run.sh
 ```
 
 Runs three suites — QML lint checks (2), Model.js unit tests (240), and
-the lookup-script word extraction tests (22).
+the lookup-script tests (22) — 264 tests total. Model.js is parsed
+in-process; the lookup script's pure functions are exercised in a
+subprocess with stubbed `wl-paste` and `omarchy-shell` so the suite
+needs no Wayland session or running shell.
+
+## Files
+
+```
+BarWidget.qml                  bar widget (icon + IPC handler + auto-install)
+Panel.qml                      popup panel (search field, entry display)
+Model.js                       Wiktionary parser, fuzzy match, i18n (692 lines)
+wordlist.js                    ~10K English words for fuzzy match (zero-config install target)
+scripts/omarchy-dictionary-lookup   global hotkey script (auto-installed to ~/.local/bin/)
+manifest.json                  plugin manifest (version, entry points)
+tests/lint.test.js             QML import + const/let lint
+tests/model.test.js            240 Model.js unit tests
+tests/lookup.test.js           22 lookup-script tests
+tests/run.sh                   test runner
+```
 
 ## Remove
 
 ```sh
 omarchy plugin remove tristonarmstrong.dictionary --yes
 ```
+
+Removes the plugin and (on next shell restart) auto-uninstalls nothing —
+the lookup script at `~/.local/bin/omarchy-dictionary-lookup` stays; remove
+it manually if you want.
 
 ## License
 
