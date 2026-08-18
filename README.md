@@ -99,11 +99,12 @@ needs no Wayland session or running shell.
 
 ```sh
 omarchy plugin remove tristonarmstrong.dictionary --yes
+rm ~/.local/bin/omarchy-dictionary-lookup
 ```
 
-Removes the plugin and (on next shell restart) auto-uninstalls nothing —
-the lookup script at `~/.local/bin/omarchy-dictionary-lookup` stays; remove
-it manually if you want.
+`omarchy plugin remove` drops the plugin files; the lookup script at
+`~/.local/bin/omarchy-dictionary-lookup` stays (the plugin doesn't know
+when it's being removed). Remove it manually with the second command.
 
 ## Supported languages
 
