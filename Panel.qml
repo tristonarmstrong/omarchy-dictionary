@@ -5,7 +5,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
-import "wordlist.js"
+import "wordlist.js" as Wordlist
 
 // Dictionary search panel. The bar widget owns a magnify glyph that toggles
 // this popup; everything user-facing lives here — the search field, the
@@ -121,8 +121,8 @@ Panel {
 
   // Inject the bundled wordlist into Model.js so fuzzyMatch() can use it.
   Component.onCompleted: {
-    if (typeof Model.setWordlist === "function" && typeof ENGLISH_WORDLIST !== "undefined")
-      Model.setWordlist(ENGLISH_WORDLIST)
+    if (typeof Model.setWordlist === "function" && typeof Wordlist.ENGLISH_WORDLIST !== "undefined")
+      Model.setWordlist(Wordlist.ENGLISH_WORDLIST)
   }
 
   // ---- Bindings need the source data checked before any property
