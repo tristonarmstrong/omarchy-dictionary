@@ -5,6 +5,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
+import "wordlist.js" as Wordlist
 
 // Dictionary search panel. The bar widget owns a magnify glyph that toggles
 // this popup; everything user-facing lives here — the search field, the
@@ -64,12 +65,7 @@ Panel {
     if (searchField.text !== q) searchField.text = q
     if (q === "") {
       lookupProc.running = false
-      root.status = "idle"
-      root.statusMessage = ""
-      root.entry = null
-      root.suggestions = []
-      root.originalQuery = ""
-      root.isAutoMatched = false
+      root.resetResults()
       return
     }
     runLookup()
@@ -82,6 +78,11 @@ Panel {
   property string status: "idle"        // "idle" | "loading" | "ok" | "notfound" | "error" | "suggestions"
   property string statusMessage: ""
   property int variants: 0               // > 1 when the API returned more than one entry object
+
+  // Target language for lookups. Driven by the dropdown in the popup
+  // header; default comes from Model.defaultLanguage so the panel and
+  // data layer stay in sync.
+  property string language: Model.defaultLanguage ? Model.defaultLanguage() : "en"
 
   // ---- Fuzzy state. Populated only when the user's exact query was a 404
   //      and the local wordlist surfaced closer candidates. suggestions is
@@ -105,6 +106,24 @@ Panel {
   readonly property int panelWidth: Style.space(420)
   readonly property int panelMaxHeight: Style.space(620)
   readonly property int searchDelayMs: 250
+
+  // ---- Reset all result-related state back to idle. Called from search(),
+  //      runLookup(), applyEdited(), and the language-change handler.
+  function resetResults() {
+    root.entry = null
+    root.variants = 0
+    root.status = "idle"
+    root.statusMessage = ""
+    root.suggestions = []
+    root.originalQuery = ""
+    root.isAutoMatched = false
+  }
+
+  // Inject the bundled wordlist into Model.js so fuzzyMatch() can use it.
+  Component.onCompleted: {
+    if (typeof Model.setWordlist === "function" && typeof Wordlist.ENGLISH_WORDLIST !== "undefined")
+      Model.setWordlist(Wordlist.ENGLISH_WORDLIST)
+  }
 
   // ---- Bindings need the source data checked before any property
   //      access; pulling the wording into functions lets the body
@@ -141,25 +160,16 @@ Panel {
     root.query = q
     if (q === "") {
       lookupProc.running = false
-      root.status = "idle"
-      root.statusMessage = ""
-      root.entry = null
-      root.suggestions = []
-      root.originalQuery = ""
-      root.isAutoMatched = false
+      root.resetResults()
       return
     }
-    var args = Model.lookupArgs(q)
+    var args = Model.lookupArgs(q, root.language)
     if (args.length === 0) return
 
     root.status = "loading"
     root.statusMessage = ""
-    root.entry = null
-    root.variants = 0
-    // Fresh lookup: drop fuzzy state. The auto-match recovery path below
-    // repopulates originalQuery if it decides to silently rewrite q.
-    root.suggestions = []
-    root.isAutoMatched = false
+    root.resetResults()
+    root.status = "loading"
     if (lookupProc.running) lookupProc.running = false
     lookupProc.command = args
     lookupProc.running = true
@@ -177,12 +187,7 @@ Panel {
     root.query = q
     if (q === "") {
       lookupProc.running = false
-      root.status = "idle"
-      root.statusMessage = ""
-      root.entry = null
-      root.suggestions = []
-      root.originalQuery = ""
-      root.isAutoMatched = false
+      root.resetResults()
       return
     }
     if (searchDebounce.running) searchDebounce.stop()
@@ -190,12 +195,7 @@ Panel {
     // half-typed words make noise — but clear any in-flight result so the
     // panel doesn't show stale data next to fresh text.
     if (root.status === "ok" || root.status === "notfound" || root.status === "error" || root.status === "suggestions") {
-      root.entry = null
-      root.status = "idle"
-      root.statusMessage = ""
-      root.suggestions = []
-      root.originalQuery = ""
-      root.isAutoMatched = false
+      root.resetResults()
     }
   }
 
@@ -208,7 +208,7 @@ Panel {
       waitForEnd: true
       onStreamFinished: {
         if (root.status !== "loading") return
-        var result = Model.parseResponse(text)
+        var result = Model.parseResponse(text, root.language)
         if (result && result.ok) {
           root.entry = result.entry
           root.variants = result.variants || 0
@@ -324,10 +324,10 @@ Column {
       width: parent.width
       spacing: Style.space(14)
 
-        // ---------- Hero: title + entry summary (parts of speech) ----------
+        // ---------- Hero: title + entry summary (parts of speech) + lang dropdown
         Item {
           width: parent.width
-          implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight)
+          implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight, languageDropdown.implicitHeight)
 
           Text {
             id: heroIcon
@@ -343,7 +343,8 @@ Column {
             id: heroLabels
             anchors.left: heroIcon.right
             anchors.leftMargin: Style.space(14)
-            anchors.right: parent.right
+            anchors.right: languageDropdown.left
+            anchors.rightMargin: Style.space(10)
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(2)
 
@@ -367,7 +368,7 @@ Column {
                 if (root.status === "loading") return "looking up…"
                 if (root.status === "notfound") return "no definition"
                 if (root.status === "error") return "couldn't reach the API"
-                return "look up an English word"
+                return "look up a word"
               }
               color: Qt.darker(root.contentForeground, 1.4)
               font.family: root.contentFontFamily
@@ -376,6 +377,42 @@ Column {
               font.letterSpacing: 1.2
               elide: Text.ElideRight
               width: parent.width
+            }
+          }
+
+          // Language switcher in the top right of the popup. Data-driven
+          // from Model.languages() (sorted alphabetically by English
+          // label in JS) so adding a language is a one-entry edit.
+          // Picking one kicks off a fresh lookup when there's already a
+          // query, so changing language doesn't require retyping the
+          // word.
+          Dropdown {
+            id: languageDropdown
+            value: root.language
+            options: Model.languages()
+            showLabel: false
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            implicitWidth: Style.space(120)
+            onChanged: function(newValue) {
+              if (newValue === root.language) return
+              root.language = newValue
+              // The previously-shown entry (or in-flight lookup) was for
+              // the prior language and is no longer meaningful under the
+              // new one. Cancel any in-flight proc, clear the entry,
+              // empty the search field, and reset to idle so the user
+              // starts fresh with the new language.
+              if (lookupProc.running) lookupProc.running = false
+              var hadResult = root.status === "ok" || root.status === "notfound" ||
+                              root.status === "error" || root.status === "suggestions" ||
+                              root.status === "loading"
+              if (hadResult) {
+                root.resetResults()
+                root.programmaticEdit = true
+                searchField.text = ""
+                root.programmaticEdit = false
+                root.query = ""
+              }
             }
           }
         }
@@ -707,13 +744,14 @@ Column {
             spacing: Style.space(10)
 
             Text {
+              id: wordText
               text: root.entryWord()
               color: root.contentForeground
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.display
               font.bold: true
               elide: Text.ElideRight
-              width: parent.width - phoneticLabel.width - Style.space(10)
+              width: parent.width - phoneticLabel.width - sourceTag.width - Style.space(20)
               anchors.verticalCenter: parent.verticalCenter
             }
 
@@ -723,6 +761,19 @@ Column {
               color: Qt.darker(root.contentForeground, 1.3)
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.body
+              font.italic: true
+              anchors.verticalCenter: parent.verticalCenter
+              visible: text !== ""
+            }
+
+            // Small muted source tag (e.g. "Wiktionary") to make it obvious
+            // which data source filled the panel.
+            Text {
+              id: sourceTag
+              text: root.entry ? Model.sourceLabel(entry) : ""
+              color: Qt.darker(root.contentForeground, 1.55)
+              font.family: root.contentFontFamily
+              font.pixelSize: Style.font.caption
               font.italic: true
               anchors.verticalCenter: parent.verticalCenter
               visible: text !== ""
