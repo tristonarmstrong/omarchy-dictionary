@@ -614,11 +614,11 @@ function setWordlist(list) {
   if (Array.isArray(list)) _WORDLIST = list
 }
 
-const AUTO_MATCH_MAX_NORMALIZED = 0.22    // ("helllo" -> "hello" = 0.14, well under)
-const ALTERNATIVES_MAX_NORMALIZED = 0.40   // distance / max length
-const ALTERNATIVES_DISTANCE_LIMIT = 3     // hard cap on raw edits
-const AUTO_MATCH_GAP = 0.08                // next candidate must trail by at least this much in score
-const ALTERNATIVES_TO_SHOW = 3
+var AUTO_MATCH_MAX_NORMALIZED = 0.22    // ("helllo" -> "hello" = 0.14, well under)
+var ALTERNATIVES_MAX_NORMALIZED = 0.40   // distance / max length
+var ALTERNATIVES_DISTANCE_LIMIT = 3     // hard cap on raw edits
+var AUTO_MATCH_GAP = 0.08                // next candidate must trail by at least this much in score
+var ALTERNATIVES_TO_SHOW = 3
 
 function fuzzyMatch(rawQuery) {
   var query = String(rawQuery || "").toLowerCase().trim()
