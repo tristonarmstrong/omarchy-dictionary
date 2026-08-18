@@ -63,6 +63,10 @@ Panel {
     var q = String(word || "").trim()
     root.query = q
     if (searchField.text !== q) searchField.text = q
+    // Make the panel visible. No-op if already open (controller.show() is
+    // idempotent). Without this the hotkey path would silently populate
+    // the search field on an invisible panel.
+    root.open()
     if (q === "") {
       lookupProc.running = false
       root.resetResults()
