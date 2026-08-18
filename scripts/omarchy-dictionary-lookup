@@ -1,0 +1,42 @@
+#!/bin/bash
+# omarchy-dictionary-lookup: read the user's selected text and open the
+# dictionary plugin with it. Designed to be bound to a global hotkey.
+#
+# Reads the primary selection (highlighted text, the X11/Wayland "middle-click
+# paste" buffer) first; falls back to the regular clipboard if empty. Pulls
+# the first alphabetic word out of whatever was selected so multi-word or
+# punctuated selections still produce a clean lookup target.
+#
+# Tested in isolation via tests/lookup.test.js — the pure helpers below are
+# extracted into the `dictionary_lookup_extract_word` function so the test
+# harness can exercise them without an X server or running shell.
+
+set -euo pipefail
+
+# extract_word <string>
+#   Returns the first run of ASCII letters in $1, or empty string if none.
+#   Pure function — no I/O, no side effects.
+extract_word() {
+  printf '%s' "${1:-}" | grep -oP '[a-zA-Z]+' | head -n1 || true
+}
+
+# read_selection
+#   Reads the Wayland primary selection (highlight), falling back to the
+#   clipboard. Returns empty string if both are empty. stderr from wl-paste
+#   (e.g. no compositor) is suppressed to keep the hotkey silent.
+read_selection() {
+  local sel
+  sel=$(wl-paste -p --no-newline 2>/dev/null || true)
+  if [[ -z "$sel" ]]; then
+    sel=$(wl-paste --no-newline 2>/dev/null || true)
+  fi
+  printf '%s' "$sel"
+}
+
+# Main: extract → send to plugin via IPC. -q keeps the hotkey silent on
+# failure (shell not running, plugin disabled, etc.).
+word=$(extract_word "$(read_selection)")
+
+if [[ -n "$word" ]]; then
+  exec omarchy-shell -q tristonarmstrong.dictionary search "$word"
+fi
