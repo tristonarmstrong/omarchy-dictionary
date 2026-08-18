@@ -58,6 +58,11 @@ if empty, extracts the first alphabetic word, and opens the dictionary
 panel with that word pre-filled. With nothing selected it just opens the
 empty panel.
 
+> **Note:** A desktop notification confirms when the script is first
+> installed. You may want to inspect it before use — review
+> `scripts/omarchy-dictionary-lookup` in the plugin repo, or run
+> `cat ~/.local/bin/omarchy-dictionary-lookup` to see what was installed.
+
 ### IPC
 
 External callers can drive the plugin via `omarchy-shell`:
