@@ -4,18 +4,20 @@
 
 // ---- Languages ----
 //
-// Data-driven list of supported target languages. Each entry carries a
-// BC-47-ish `value` (the dropdown's stored value), an English `label`
-// for the menu, and the native `wikiName` — the heading Wiktionary uses
-// for its own language section in that edition (e.g. "English" on
+// Data-driven list of supported Wiktionary editions. Each entry carries a
+// BCP-47-ish `value` (also the value detectLanguage() returns), an
+// English `label`, and the native `wikiName` — the heading Wiktionary
+// uses for its own language section in that edition (e.g. "English" on
 // en.wikt, "ภาษาไทย" on th.wikt, "日本語" on ja.wikt). The native name is
 // what the parser matches against, so getting it right is the
 // difference between a clean parse and an empty meaning[] on the
 // first lookup.
 //
-// Languages are listed roughly by coverage depth; the dropdown sorts
-// them alphabetically by English label. The Free Dictionary per-language
-// API isn't currently exercised — see apiBase below.
+// Languages are listed roughly by coverage depth. There is no manual
+// selector in the UI — detectLanguage() below picks the edition per
+// query, and langLabel()/langWikiName() resolve entries for display and
+// parsing. The Free Dictionary per-language API isn't currently
+// exercised — see apiBase below.
 var LANGUAGES = [
   { value: "ar", label: "Arabic",        wikiName: "Arabic" },
   { value: "bn", label: "Bengali",       wikiName: "Bengali" },
@@ -57,6 +59,102 @@ function langWikiName(value) {
 function defaultLanguage() { return "en" }
 
 function languages() { return LANGUAGES }
+
+// ---- Language auto-detection ----
+//
+// detectLanguage(text) picks the Wiktionary edition from the query's own
+// characters — the JS equivalent of counting unicodedata scripts per
+// char, hand-rolled as code-point ranges because the QML JS engine ships
+// no Unicode character-name API.
+//
+//   - Every non-Latin language in LANGUAGES owns a private Unicode
+//     block, so its first code point settles the call: Thai→th,
+//     Bengali→bn, Devanagari→hi, Cyrillic→ru, Hangul→ko, Kana→ja.
+//
+//   - Two blocks are shared between languages and get resolved by other
+//     evidence found in the same pass:
+//       * Han ideographs serve Japanese AND Chinese — any kana in the
+//         query tips the call to "ja", otherwise "zh".
+//       * Arabic script serves Arabic and Persian — letters only
+//         Persian uses (پ چ ژ گ ک ی, incl. presentation forms) tip the
+//         call to "fa", otherwise "ar".
+//
+//   - Latin-script queries carry no reliable signal (en fr de es … all
+//     share one alphabet; diacritic guessing misfires more than it
+//     helps), so they stay on English. en.wiktionary also hosts most
+//     foreign headwords under their own ==Language== sections, which
+//     the parser's first-level-2 fallback already handles.
+//
+// There is no manual override in the UI any more; this function decides
+// every lookup, and runLookup() feeds its result straight into
+// lookupArgs()/parseResponse().
+
+function detectLanguage(rawText) {
+  var text = String(rawText || "")
+  if (text.trim() === "") return defaultLanguage()
+
+  var sawHan = false
+  var sawKana = false
+  var sawArabic = false
+  var sawPersian = false
+
+  for (var i = 0; i < text.length; i++) {
+    var ch = text.charCodeAt(i)
+
+    // Hangul syllables + jamo blocks.
+    if ((ch >= 0xAC00 && ch <= 0xD7A3) ||
+        (ch >= 0x1100 && ch <= 0x11FF) ||
+        (ch >= 0x3130 && ch <= 0x318F)) return "ko"
+
+    // Kana: hiragana + katakana + halfwidth katakana.
+    if ((ch >= 0x3041 && ch <= 0x30FF) ||
+        (ch >= 0x31F0 && ch <= 0x31FF) ||
+        (ch >= 0xFF66 && ch <= 0xFF9D)) { sawKana = true; continue }
+
+    // CJK ideographs (shared ja/zh — resolved after the loop).
+    if ((ch >= 0x3400 && ch <= 0x4DBF) ||
+        (ch >= 0x4E00 && ch <= 0x9FFF) ||
+        (ch >= 0xF900 && ch <= 0xFAFF)) { sawHan = true; continue }
+
+    // Thai.
+    if (ch >= 0x0E01 && ch <= 0x0E5B) return "th"
+
+    // Bengali.
+    if (ch >= 0x0980 && ch <= 0x09FF) return "bn"
+
+    // Devanagari.
+    if (ch >= 0x0900 && ch <= 0x097F) return "hi"
+
+    // Cyrillic.
+    if ((ch >= 0x0400 && ch <= 0x04FF) ||
+        (ch >= 0x0500 && ch <= 0x052F)) return "ru"
+
+    // Arabic script (standard block + supplement + presentation forms).
+    if ((ch >= 0x0600 && ch <= 0x06FF) ||
+        (ch >= 0x0750 && ch <= 0x077F) ||
+        (ch >= 0xFB50 && ch <= 0xFDFF) ||
+        (ch >= 0xFE70 && ch <= 0xFEFF)) {
+      sawArabic = true
+      // Persian-only letters, incl. their isolated/initial/medial/final forms.
+      if (ch === 0x067E || ch === 0x0686 || ch === 0x0698 || ch === 0x06AF ||
+          ch === 0x06A9 || ch === 0x06CC ||
+          (ch >= 0xFB56 && ch <= 0xFB59) || (ch >= 0xFB7A && ch <= 0xFB7D) ||
+          (ch >= 0xFB8A && ch <= 0xFB8B) || (ch >= 0xFB92 && ch <= 0xFB95) ||
+          (ch >= 0xFB8E && ch <= 0xFB91) || (ch >= 0xFBFC && ch <= 0xFBFF)) {
+        sawPersian = true
+      }
+    }
+  }
+
+  // Shared-script resolutions.
+  if (sawKana) return "ja"
+  if (sawHan) return "zh"
+  if (sawArabic) return sawPersian ? "fa" : "ar"
+
+  // Latin script (or digits/punctuation only): no reliable per-language
+  // signal — stay on the English edition.
+  return defaultLanguage()
+}
 
 // ---- API layer ----
 //

@@ -83,9 +83,10 @@ Panel {
   property string statusMessage: ""
   property int variants: 0               // > 1 when the API returned more than one entry object
 
-  // Target language for lookups. Driven by the dropdown in the popup
-  // header; default comes from Model.defaultLanguage so the panel and
-  // data layer stay in sync.
+  // Target language for lookups. Auto-detected per query by
+  // Model.detectLanguage() inside runLookup() — there is no manual
+  // selector any more. Kept as a property so the fetch and parse paths
+  // agree on one edition even across re-entry.
   property string language: Model.defaultLanguage ? Model.defaultLanguage() : "en"
 
   // ---- Fuzzy state. Populated only when the user's exact query was a 404
@@ -144,6 +145,18 @@ Panel {
     return root.entry ? String(root.entry.phonetic || "") : ""
   }
 
+  // Header tag showing where the answer came from and which edition was
+  // auto-detected ("Wiktionary · Thai"). Function (not a binding ternary)
+  // so a null entry short-circuits before property access — QML evaluates
+  // both arms of `?:` and null-derefs mid-fetch otherwise.
+  function sourceTagText() {
+    if (!root.entry) return ""
+    var src = Model.sourceLabel(root.entry)
+    if (src === "") return ""
+    var lang = root.entry.language ? Model.langLabel(root.entry.language) : ""
+    return lang !== "" ? src + " · " + lang : src
+  }
+
   // ---- Focus handling. The field owns initial focus; Esc redirects to close.
   function refreshFocus() {
     if (!root.opened) return
@@ -167,6 +180,10 @@ Panel {
       root.resetResults()
       return
     }
+    // Pick the Wiktionary edition from the query's own characters —
+    // Thai → th.wiktionary, kana → ja, Cyrillic → ru; Latin-script
+    // queries stay on the English edition.
+    root.language = Model.detectLanguage(q)
     var args = Model.lookupArgs(q, root.language)
     if (args.length === 0) return
 
@@ -328,10 +345,10 @@ Column {
       width: parent.width
       spacing: Style.space(14)
 
-        // ---------- Hero: title + entry summary (parts of speech) + lang dropdown
+        // ---------- Hero: title + entry summary
         Item {
           width: parent.width
-          implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight, languageDropdown.implicitHeight)
+          implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight)
 
           Text {
             id: heroIcon
@@ -347,7 +364,7 @@ Column {
             id: heroLabels
             anchors.left: heroIcon.right
             anchors.leftMargin: Style.space(14)
-            anchors.right: languageDropdown.left
+            anchors.right: parent.right
             anchors.rightMargin: Style.space(10)
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(2)
@@ -372,7 +389,7 @@ Column {
                 if (root.status === "loading") return "looking up…"
                 if (root.status === "notfound") return "no definition"
                 if (root.status === "error") return "couldn't reach the API"
-                return "look up a word"
+                return "look up a word — language is auto-detected"
               }
               color: Qt.darker(root.contentForeground, 1.4)
               font.family: root.contentFontFamily
@@ -381,42 +398,6 @@ Column {
               font.letterSpacing: 1.2
               elide: Text.ElideRight
               width: parent.width
-            }
-          }
-
-          // Language switcher in the top right of the popup. Data-driven
-          // from Model.languages() (sorted alphabetically by English
-          // label in JS) so adding a language is a one-entry edit.
-          // Picking one kicks off a fresh lookup when there's already a
-          // query, so changing language doesn't require retyping the
-          // word.
-          Dropdown {
-            id: languageDropdown
-            value: root.language
-            options: Model.languages()
-            showLabel: false
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            implicitWidth: Style.space(120)
-            onChanged: function(newValue) {
-              if (newValue === root.language) return
-              root.language = newValue
-              // The previously-shown entry (or in-flight lookup) was for
-              // the prior language and is no longer meaningful under the
-              // new one. Cancel any in-flight proc, clear the entry,
-              // empty the search field, and reset to idle so the user
-              // starts fresh with the new language.
-              if (lookupProc.running) lookupProc.running = false
-              var hadResult = root.status === "ok" || root.status === "notfound" ||
-                              root.status === "error" || root.status === "suggestions" ||
-                              root.status === "loading"
-              if (hadResult) {
-                root.resetResults()
-                root.programmaticEdit = true
-                searchField.text = ""
-                root.programmaticEdit = false
-                root.query = ""
-              }
             }
           }
         }
@@ -770,11 +751,11 @@ Column {
               visible: text !== ""
             }
 
-            // Small muted source tag (e.g. "Wiktionary") to make it obvious
-            // which data source filled the panel.
+            // Small muted tag (e.g. "Wiktionary · Thai") making it obvious
+            // which data source and auto-detected edition filled the panel.
             Text {
               id: sourceTag
-              text: root.entry ? Model.sourceLabel(entry) : ""
+              text: root.sourceTagText()
               color: Qt.darker(root.contentForeground, 1.55)
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.caption
