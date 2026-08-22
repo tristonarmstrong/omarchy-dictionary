@@ -31,10 +31,16 @@ wayland_display() {
 }
 
 # extract_word <string>
-#   Returns the first run of ASCII letters in $1, or empty string if none.
-#   Pure function — no I/O, no side effects.
+#   Returns the first run of Unicode letters (plus combining marks, which
+#   scripts like Thai and Devanagari need to spell whole words), or empty
+#   string if none. Pure function — no I/O, no side effects.
+#
+#   Runs grep under LC_ALL=C.utf8 because \p{L}/\p{M} only match multibyte
+#   characters when the engine knows the input is UTF-8; hotkey-spawned
+#   processes can't rely on LANG being set. C.utf8 ships with glibc on
+#   Arch, so it's always available.
 extract_word() {
-  printf '%s' "${1:-}" | grep -oP '[a-zA-Z]+' | head -n1 || true
+  printf '%s' "${1:-}" | LC_ALL=C.utf8 grep -aoP '[\p{L}\p{M}]+' | head -n1 || true
 }
 
 # read_selection

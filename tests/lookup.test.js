@@ -108,10 +108,26 @@ test("whitespace-only returns empty", () => {
   assert.strictEqual(callExtractWord("   "), "");
 });
 
-test("unicode letters are excluded (script targets ASCII)", () => {
-  // café's "fé" has accented chars — grep -oP '[a-zA-Z]+' will stop at é
-  // because é is not in [a-zA-Z]. Verify the contract: ASCII letters only.
-  assert.strictEqual(callExtractWord("café"), "caf");
+test("keeps accented Latin intact", () => {
+  assert.strictEqual(callExtractWord("café"), "café");
+});
+
+test("keeps Thai words whole (combining marks included)", () => {
+  // The vowel/tone marks are Unicode Mn (marks), not letters — without
+  // \p{M} in the class the run would split at them and lose them.
+  assert.strictEqual(callExtractWord("สวัสดี ครับ"), "สวัสดี");
+});
+
+test("keeps Devanagari conjuncts whole", () => {
+  assert.strictEqual(callExtractWord("(नमस्ते)"), "नमस्ते");
+});
+
+test("keeps Cyrillic words", () => {
+  assert.strictEqual(callExtractWord("\"привет\", he said"), "привет");
+});
+
+test("first word wins regardless of script", () => {
+  assert.strictEqual(callExtractWord("こんにちは world"), "こんにちは");
 });
 
 // ── wayland_display helper tests ─────────────────────────────────────────────
@@ -202,6 +218,36 @@ group("main flow — IPC dispatch");
 test("with a selection: calls 'search' with the extracted word", () => {
   var result = callMainFlow("hello world");
   assert.strictEqual(result, "-q tristonarmstrong.dictionary search hello");
+});
+
+test("with a non-Latin selection: searches the extracted word (regression)", () => {
+  // Regression: the old ASCII-only extractor turned a Thai highlight into
+  // an empty word and fell through to 'toggle' — no prefill, no language
+  // detection. It must dispatch 'search' with the Unicode word instead.
+  var result = callMainFlow("สวัสดี ครับ");
+  assert.strictEqual(result, "-q tristonarmstrong.dictionary search สวัสดี");
+});
+
+// The hotkey contract: ANY highlighted word, whatever its script, must be
+// piped into the search field via 'search <word>'. Only genuinely empty /
+// punctuation-only / digit-only selections may fall back to 'toggle'.
+group("main flow — any language pipes to the search field");
+
+[
+  ["hello world", "hello"],
+  ["สวัสดี ครับ", "สวัสดี"],
+  ["こんにちは、世界", "こんにちは"],
+  ["привет, как дела?", "привет"],
+  ["مرحبا بالعالم", "مرحبا"],
+  ["(नमस्ते)", "नमस्ते"],
+  ["café au lait", "café"],
+  ["안녕하세요 반갑습니다", "안녕하세요"],
+  ["寿司は好きです", "寿司は好きです"]
+].forEach(function (c) {
+  test("\"" + c[0] + "\" → search " + c[1], () => {
+    var result = callMainFlow(c[0]);
+    assert.strictEqual(result, "-q tristonarmstrong.dictionary search " + c[1]);
+  });
 });
 
 test("with punctuation-only selection: calls 'toggle' to open empty popup", () => {

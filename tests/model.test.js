@@ -32,6 +32,7 @@ var stripped = src
 // We need to add explicit export lines so Node can reach them.
 var PUBLIC_SYMBOLS = [
   "LANGUAGES","LANG_BY_VALUE","langLabel","langWikiName","defaultLanguage","languages",
+  "detectLanguage",
   "apiBase","lookupArgs","parseResponse","normalizeEntry","normalizeMeaning","normalizeDefinition","stringList",
   "parseSections","stripInlineHeaders","WIKT_POS_KEYS","WIKT_SKIP_DROP",
   "wiktCanonicalPos","wiktExtractIpa","wiktIsInflectionLine","wiktExtractDefs",
@@ -147,6 +148,95 @@ group("langWikiName", function () {
 
 group("defaultLanguage", function () {
   test("returns 'en'", function () { eq(M.defaultLanguage(), "en"); });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 2b — detectLanguage
+// ═══════════════════════════════════════════════════════════════════════════
+group("detectLanguage — script detection (tier 1)", function () {
+  test("Thai → th",            function () { eq(M.detectLanguage("สวัสดี"), "th"); });
+  test("Bengali → bn",         function () { eq(M.detectLanguage("বাংলা"), "bn"); });
+  test("Devanagari → hi",      function () { eq(M.detectLanguage("नमस्ते"), "hi"); });
+  test("Cyrillic → ru",        function () { eq(M.detectLanguage("привет"), "ru"); });
+  test("Hangul → ko",          function () { eq(M.detectLanguage("안녕하세요"), "ko"); });
+  test("kana → ja",            function () { eq(M.detectLanguage("こんにちは"), "ja"); });
+  test("katakana loanword → ja", function () { eq(M.detectLanguage("コーヒー"), "ja"); });
+  test("han only → zh",        function () { eq(M.detectLanguage("你好"), "zh"); });
+  test("kana + han → ja (wins over han)", function () { eq(M.detectLanguage("寿司は好きです"), "ja"); });
+  test("Arabic plain → ar",    function () { eq(M.detectLanguage("مرحبا"), "ar"); });
+  test("Persian letter گ → fa", function () { eq(M.detectLanguage("سلام گربه"), "fa"); });
+  test("Persian letter پ → fa", function () { eq(M.detectLanguage("پارسی"), "fa"); });
+  test("mixed script: latin + kana + han → ja", function () { eq(M.detectLanguage("sushi お寿司"), "ja"); });
+  test("han + latin without kana → zh", function () { eq(M.detectLanguage("寿司 sushi"), "zh"); });
+});
+
+group("detectLanguage — Latin script falls back to en", function () {
+  test("plain ASCII → en",       function () { eq(M.detectLanguage("hello world"), "en"); });
+  test("accented Latin → en (città)", function () { eq(M.detectLanguage("città"), "en"); });
+  test("Spanish-looking Latin → en (señora)", function () { eq(M.detectLanguage("señora"), "en"); });
+  test("German-looking Latin → en (straße)",  function () { eq(M.detectLanguage("straße"), "en"); });
+  test("numbers only → en",      function () { eq(M.detectLanguage("12345"), "en"); });
+  test("empty string → en",      function () { eq(M.detectLanguage(""), "en"); });
+  test("whitespace → en",        function () { eq(M.detectLanguage("   "), "en"); });
+  test("null → en",              function () { eq(M.detectLanguage(null), "en"); });
+  test("undefined → en",         function () { eq(M.detectLanguage(undefined), "en"); });
+  test("result is always a valid LANGUAGES value", function () {
+    ["hello", "สวัสดี", "你好", "señor", "café", "123"].forEach(function (q) {
+      var v = M.detectLanguage(q);
+      assert(M.LANG_BY_VALUE[v], "invalid value for '" + q + "': " + v);
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 2c — detection → fetch routing (integration contract)
+// ═══════════════════════════════════════════════════════════════════════════
+// Locks in what runLookup() does at search time for ANY word entering the
+// field — typed, piped in by the hotkey script, or clicked as a suggestion
+// chip: Model.detectLanguage(word) picks the edition, and that value drives
+// lookupArgs()/parseResponse(). Pinning word → edition → URL here means no
+// future change can silently route a language to the wrong wiki.
+
+group("detectLanguage × lookupArgs — every word routes to its edition", function () {
+  [
+    ["hello", "en"],
+    ["สวัสดี", "th"],
+    ["বাংলা", "bn"],
+    ["नमस्ते", "hi"],
+    ["привет", "ru"],
+    ["안녕하세요", "ko"],
+    ["こんにちは", "ja"],
+    ["コーヒー", "ja"],
+    ["寿司", "zh"],
+    ["你好", "zh"],
+    ["مرحبا", "ar"],
+    ["گربه", "fa"],
+    ["señora", "en"] // Latin script stays on English even when accented
+  ].forEach(function (c) {
+    var word = c[0], expected = c[1];
+    test("\"" + word + "\" → " + expected + ".wiktionary.org", function () {
+      var lang = M.detectLanguage(word);
+      eq(lang, expected);
+      var url = M.lookupArgs(word, lang).slice(-1)[0];
+      assert(url.indexOf("https://" + expected + ".wiktionary.org/") === 0,
+        "expected " + expected + ".wiktionary.org, got: " + url);
+      assert(url.indexOf("titles=" + encodeURIComponent(word)) > -1,
+        "URL must carry the encoded word, got: " + url);
+    });
+  });
+
+  test("detected edition parses its own response shape (th round trip)", function () {
+    var lang = M.detectLanguage("สวัสดี");
+    eq(lang, "th");
+    var resp = JSON.stringify({ query: { pages: { "9": {
+      pageid: 9, title: "สวัสดี",
+      extract: "== ภาษาไทย ==\n=== คำนาม ===\nคำทักทายของคนไทย.\nใช้ต้อนรับผู้มาเยือน."
+    }}}});
+    var r = M.parseResponse(resp, lang);
+    eq(r.ok, true);
+    eq(r.entry.language, "th");
+    assert(r.entry.meanings.length >= 1);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -732,7 +822,7 @@ group("parseSections — edge cases", function () {
 // ═══════════════════════════════════════════════════════════════════════════
 group("manifest.json", function () {
   var manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "manifest.json"), "utf8"));
-  test("version is 1.1.0", function () { eq(manifest.version, "1.1.0"); });
+  test("version is 1.2.0", function () { eq(manifest.version, "1.2.0"); });
   test("id matches module name", function () { eq(manifest.id, "tristonarmstrong.dictionary"); });
   test("schemaVersion is 1", function () { eq(manifest.schemaVersion, 1); });
   test("kinds includes bar-widget", function () { assert(manifest.kinds.indexOf("bar-widget") > -1); });
