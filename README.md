@@ -6,9 +6,12 @@ suggestions, and a global hotkey for looking up highlighted text anywhere
 on your system.
 
 Click the bar icon to open a search field. Type a word and press Enter to
-look it up. Use the language dropdown in the panel header to switch editions
-between [supported languages](#supported-languages). When no match exists,
-up to three similar words are suggested as clickable chips.
+look it up. The Wiktionary edition is picked automatically from the word's
+script — Thai, Japanese, Korean, Russian, Hindi, Arabic, Persian and more
+are detected from the characters themselves; Latin-script words look up on
+the English edition (see [supported languages](#supported-languages)).
+When no match exists, up to three similar words are suggested as clickable
+chips.
 
 ![Dictionary preview](preview.png)
 
@@ -36,7 +39,8 @@ omarchy bar move tristonarmstrong.dictionary --section center --after omarchy.cl
 
 - Click the bar icon to open the search panel
 - Type a word and press Enter to look it up
-- Use the language dropdown in the panel header to switch editions
+- The language edition is auto-detected from the word's script — no
+  selector to fiddle with
 - When no match exists, up to three similar words appear as chips you can
   click to retry
 - Press Esc to close the panel
@@ -110,33 +114,39 @@ when it's being removed). Remove it manually with the second command.
 
 23 Wiktionary editions, alphabetically by English label:
 
-| Language | Code |
+| Language | Script detected |
 |---|---|
-| Arabic | `ar` |
-| Bengali | `bn` |
-| Chinese | `zh` |
-| Dutch | `nl` |
-| English | `en` |
-| French | `fr` |
-| German | `de` |
-| Hindi | `hi` |
-| Indonesian | `id` |
-| Italian | `it` |
-| Japanese | `ja` |
-| Korean | `ko` |
-| Malay | `ms` |
-| Persian | `fa` |
-| Polish | `pl` |
-| Portuguese | `pt` |
-| Russian | `ru` |
-| Spanish | `es` |
-| Swahili | `sw` |
-| Swedish | `sv` |
-| Thai | `th` |
-| Turkish | `tr` |
-| Vietnamese | `vi` |
+| Arabic | Arabic script (without Persian-only letters) |
+| Bengali | Bengali |
+| Chinese | Han ideographs, no kana present |
+| Dutch | falls back to English edition |
+| English | default for all Latin-script words |
+| French | falls back to English edition |
+| German | falls back to English edition |
+| Hindi | Devanagari |
+| Indonesian | falls back to English edition |
+| Italian | falls back to English edition |
+| Japanese | Kana (hiragana/katakana), or Han with kana |
+| Korean | Hangul |
+| Malay | falls back to English edition |
+| Persian | Arabic script with Persian-only letters (پ چ ژ گ) |
+| Polish | falls back to English edition |
+| Portuguese | falls back to English edition |
+| Russian | Cyrillic |
+| Spanish | falls back to English edition |
+| Swahili | falls back to English edition |
+| Swedish | falls back to English edition |
+| Thai | Thai |
+| Turkish | falls back to English edition |
+| Vietnamese | falls back to English edition |
 
-To add another edition, append it to the `LANGUAGES` array in `Model.js`.
+Detection scans the query's Unicode blocks (`Model.detectLanguage`).
+Latin-script languages share one alphabet and can't be told apart
+reliably from a single word, so they run on the English edition — which
+also hosts headwords for most of them.
+
+To add another edition, append it to the `LANGUAGES` array in `Model.js`
+and, if it uses its own script, a block check inside `detectLanguage`.
 
 ## License
 
