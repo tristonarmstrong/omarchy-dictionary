@@ -74,9 +74,17 @@ BarWidget {
 
   Process {
     id: installProc
-    property string scriptPath: String(Qt.resolvedUrl("scripts/omarchy-dictionary-lookup")).replace(/^file:\/\//, "/")
+    // Util.fileUrl encodes every path segment, so Qt.resolvedUrl returns a
+    // percent-encoded URL.  decodeURIComponent turns it back into a real
+    // filesystem path that cmp/install can open.  The try/catch handles the
+    // edge case where the URL is already plain ASCII (no-op decode).
+    property string scriptPath: {
+      var url = String(Qt.resolvedUrl("scripts/omarchy-dictionary-lookup"))
+      var raw = url.replace(/^file:\/\//, "/")
+      try { return decodeURIComponent(raw) } catch (e) { return raw }
+    }
     command: ["sh", "-c",
-      "home=\"${HOME:-" + (Quickshell.env.HOME || "/root") + "}\"; " +
+      "home=\"${HOME:-" + (Quickshell.env("HOME") || "/root") + "\"}; " +
       "dst=\"$home/.local/bin/omarchy-dictionary-lookup\"; " +
       "mkdir -p \"$home/.local/bin\" && " +
       "if [ ! -f \"$dst\" ] || ! cmp -s '" + scriptPath + "' \"$dst\"; then " +
@@ -90,6 +98,9 @@ BarWidget {
           root.notify("Dictionary", "Installed system script: ~/.local/bin/omarchy-dictionary-lookup")
         }
       }
+    }
+    stderr: SplitParser {
+      onRead: function(line) { console.warn("omarchy-dictionary install:", line) }
     }
   }
 
