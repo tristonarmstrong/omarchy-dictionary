@@ -732,7 +732,7 @@ group("parseSections — edge cases", function () {
 // ═══════════════════════════════════════════════════════════════════════════
 group("manifest.json", function () {
   var manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "manifest.json"), "utf8"));
-  test("version is 1.2.0", function () { eq(manifest.version, "1.2.0"); });
+  test("version is 1.2.1", function () { eq(manifest.version, "1.2.1"); });
   test("id matches module name", function () { eq(manifest.id, "tristonarmstrong.dictionary"); });
   test("schemaVersion is 1", function () { eq(manifest.schemaVersion, 1); });
   test("kinds includes bar-widget", function () { assert(manifest.kinds.indexOf("bar-widget") > -1); });

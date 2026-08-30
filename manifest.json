@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "tristonarmstrong.dictionary",
   "name": "Dictionary",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "author": "Triston Armstrong",
   "description": "Look up word definitions across 23 Wiktionary editions directly in the Omarchy bar. PLUS press meta+D to auto search highlighted words",
   "kinds": [
