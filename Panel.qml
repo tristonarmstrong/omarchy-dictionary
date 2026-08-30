@@ -819,6 +819,7 @@ Column {
 
                     Text {
                       text: modelData.partOfSpeech
+                      textFormat: Text.PlainText
                       color: Color.accent
                       font.family: root.contentFontFamily
                       font.pixelSize: Style.font.caption
@@ -863,6 +864,7 @@ Column {
                         Text {
                           width: parent.width - Style.space(20) - Style.space(8)
                           text: modelData.definition
+                          textFormat: Text.PlainText
                           color: root.contentForeground
                           font.family: root.contentFontFamily
                           font.pixelSize: Style.font.body
@@ -875,6 +877,7 @@ Column {
                         x: Style.space(20) + Style.space(8)
                         visible: modelData.example !== ""
                         text: "\"" + modelData.example + "\""
+                        textFormat: Text.PlainText
                         color: Qt.darker(root.contentForeground, 1.3)
                         font.family: root.contentFontFamily
                         font.pixelSize: Style.font.caption
@@ -888,6 +891,7 @@ Column {
                     visible: modelData.synonyms.length > 0
                     width: parent.width
                     text: "synonyms: " + modelData.synonyms.join(", ")
+                    textFormat: Text.PlainText
                     color: Qt.darker(root.contentForeground, 1.5)
                     font.family: root.contentFontFamily
                     font.pixelSize: Style.font.caption
@@ -898,6 +902,7 @@ Column {
                     visible: modelData.antonyms.length > 0
                     width: parent.width
                     text: "antonyms: " + modelData.antonyms.join(", ")
+                    textFormat: Text.PlainText
                     color: Qt.darker(root.contentForeground, 1.5)
                     font.family: root.contentFontFamily
                     font.pixelSize: Style.font.caption
