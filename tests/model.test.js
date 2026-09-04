@@ -164,7 +164,7 @@ group("apiBase", function () {
   });
   test("'th' → th.wiktionary.org", function () { assert(M.apiBase("th").indexOf("https://th.wiktionary.org") === 0); });
   test("'ja' → ja.wiktionary.org", function () { assert(M.apiBase("ja").indexOf("https://ja.wiktionary.org") === 0); });
-  test("unknown 'xx' still builds URL", function () { assert(M.apiBase("xx").indexOf("xx.wiktionary.org") > -1); });
+  test("unknown 'xx' falls back to en (allowlist)", function () { assert(M.apiBase("xx").indexOf("en.wiktionary.org") > -1); });
   test("trims + lowercases", function () { assert(M.apiBase("  TH  ").indexOf("th.wiktionary.org") > -1); });
   test("whitespace-only falls back to en", function () { assert(M.apiBase("   ").indexOf("en.wiktionary.org") > -1); });
 });
@@ -952,13 +952,13 @@ group("parseWiktionaryWikitext — fallback/edges", function () {
 // 25 — apiBase: edge cases
 // ═══════════════════════════════════════════════════════════════════════════
 group("apiBase — edge cases", function () {
-  test("very short code 'a' builds URL", function () {
+  test("very short code 'a' falls back to en (allowlist)", function () {
     var u = M.apiBase("a");
-    assert(u.indexOf("https://a.wiktionary.org") > -1);
+    assert(u.indexOf("https://en.wiktionary.org") > -1);
   });
-  test("numeric code '123' builds URL", function () {
+  test("numeric code '123' falls back to en (allowlist)", function () {
     var u = M.apiBase("123");
-    assert(u.indexOf("https://123.wiktionary.org") > -1);
+    assert(u.indexOf("https://en.wiktionary.org") > -1);
   });
   test("URL always ends with 'titles='", function () {
     ["en", "th", "ja", "ko", "fr", "de"].forEach(function (c) {

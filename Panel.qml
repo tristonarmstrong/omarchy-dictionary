@@ -374,6 +374,7 @@ Column {
                 if (root.status === "error") return "couldn't reach the API"
                 return "look up a word"
               }
+              textFormat: Text.PlainText
               color: Qt.darker(root.contentForeground, 1.4)
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.caption
@@ -617,6 +618,7 @@ Column {
 
               Text {
                 text: "Looking up \"" + root.query + "\"…"
+                textFormat: Text.PlainText
                 color: Qt.darker(root.contentForeground, 1.3)
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.body
@@ -633,6 +635,7 @@ Column {
               Text {
                 width: parent.width
                 text: "No definition for \"" + (root.originalQuery || root.query) + "\"."
+                textFormat: Text.PlainText
                 color: Qt.darker(root.contentForeground, 1.0)
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.body
@@ -676,6 +679,7 @@ Column {
               Text {
                 width: parent.width
                 text: "No definition for \"" + root.query + "\"."
+                textFormat: Text.PlainText
                 color: Qt.darker(root.contentForeground, 1.0)
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.body
@@ -686,6 +690,7 @@ Column {
                 width: parent.width
                 visible: root.statusMessage !== ""
                 text: root.statusMessage
+                textFormat: Text.PlainText
                 color: Qt.darker(root.contentForeground, 1.5)
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.caption
@@ -702,6 +707,7 @@ Column {
               Text {
                 width: parent.width
                 text: "Couldn't look up \"" + root.query + "\"."
+                textFormat: Text.PlainText
                 color: Qt.darker(root.contentForeground, 1.0)
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.body
@@ -711,6 +717,7 @@ Column {
               Text {
                 width: parent.width
                 text: root.statusMessage
+                textFormat: Text.PlainText
                 color: Qt.darker(root.contentForeground, 1.5)
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.caption
@@ -736,6 +743,7 @@ Column {
             width: parent.width
             visible: root.isAutoMatched && root.originalQuery !== "" && root.entry !== null
             text: root.autoMatchedNote()
+            textFormat: Text.PlainText
             color: Qt.darker(root.contentForeground, 1.4)
             font.family: root.contentFontFamily
             font.pixelSize: Style.font.caption
@@ -750,6 +758,7 @@ Column {
             Text {
               id: wordText
               text: root.entryWord()
+              textFormat: Text.PlainText
               color: root.contentForeground
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.display
@@ -762,6 +771,7 @@ Column {
             Text {
               id: phoneticLabel
               text: root.entryPhonetic()
+              textFormat: Text.PlainText
               color: Qt.darker(root.contentForeground, 1.3)
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.body
@@ -775,6 +785,7 @@ Column {
             Text {
               id: sourceTag
               text: root.entry ? Model.sourceLabel(entry) : ""
+              textFormat: Text.PlainText
               color: Qt.darker(root.contentForeground, 1.55)
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.caption
@@ -916,6 +927,70 @@ Column {
                 height: Style.space(4)
               }
             }
+          }
+        }
+
+        // ---------- Hotkey script footer ----------
+        // Explicit opt-in install for the SUPER+D selection lookup.
+        // Nothing is written to ~/.local/bin/ until the user clicks
+        // Install. Status comes from the host BarWidget
+        // (installStatus/installMessage) which runs the mkdir/cmp/install
+        // stages shell-free.
+        PanelSeparator {
+          foreground: root.contentForeground
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(6)
+
+          Row {
+            width: parent.width
+            spacing: Style.space(10)
+
+            Text {
+              id: installLabel
+              text: "Install hotkey script"
+              textFormat: Text.PlainText
+              color: root.contentForeground
+              font.family: root.contentFontFamily
+              font.pixelSize: Style.font.body
+              elide: Text.ElideRight
+              width: parent.width - installButton.width - Style.space(10)
+              anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Button {
+              id: installButton
+              text: "Install"
+              enabled: root.hostWidget ? root.hostWidget.installStatus !== "working" : true
+              onClicked: {
+                if (root.hostWidget && typeof root.hostWidget.installHotkeyScript === "function")
+                  root.hostWidget.installHotkeyScript()
+              }
+              foreground: root.contentForeground
+            }
+          }
+
+          Text {
+            width: parent.width
+            visible: text !== ""
+            text: root.hostWidget ? root.hostWidget.installMessage : ""
+            textFormat: Text.PlainText
+            color: Qt.darker(root.contentForeground, 1.4)
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+
+          Text {
+            width: parent.width
+            text: "Enables SUPER+D lookup. Installs to ~/.local/bin/."
+            textFormat: Text.PlainText
+            color: Qt.darker(root.contentForeground, 1.7)
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
           }
         }
       }

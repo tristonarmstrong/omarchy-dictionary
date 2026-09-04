@@ -1,19 +1,28 @@
 #!/usr/bin/env node
 "use strict";
 
-// Tests for the auto-install mechanism in BarWidget.qml.
+// Tests for the manual-install mechanism in BarWidget.qml (triggered by the
+// panel footer's Install button via installHotkeyScript()).
 //
-// The QML Process builds a shell command that copies the lookup script from
-// the plugin's scripts/ directory to ~/.local/bin/.  This test suite
-// exercises the two key pieces that were fixed in issue #5:
+// The QML widget copies the lookup script from the plugin's scripts/
+// directory to ~/.local/bin/ in three shell-free Process stages with paths
+// passed as argv (never interpolated into an `sh -c` string, so quoting can
+// never break):
+//
+//   1. mkdir -p ~/.local/bin        (the dir is not assumed to exist on a
+//                                     fresh install)
+//   2. cmp -s <src> <dst>           (exit 0 = identical, stay silent)
+//   3. install -m755 <src> <dst>    (only when cmp reported differ/missing)
+//
+// This suite exercises the two key pieces:
 //
 //   1. decodeURIComponent on the Qt.resolvedUrl path — Util.fileUrl
 //      encodes every path segment, so the resolved URL can contain %20
 //      or other percent-encoding that breaks cmp/install if not decoded.
 //
-//   2. The shell install command itself — it must correctly detect when
-//      the destination is missing or stale, copy the source, and only
-//      echo "installed" when install(1) actually ran.
+//   2. The staged install itself — it must correctly detect when
+//      the destination is missing or stale, copy the source, and stay
+//      silent when the destination already matches.
 //
 // Run:  node tests/install.test.js
 
@@ -21,7 +30,7 @@ var assert = require("assert");
 var path   = require("path");
 var fs     = require("fs");
 var os     = require("os");
-var { execSync } = require("child_process");
+var { execFileSync } = require("child_process");
 
 // ── Minimal test harness ───────────────────────────────────────────────────
 var _group = "";
@@ -109,38 +118,33 @@ test("returns raw path if decodeURIComponent throws", () => {
   assert.ok(result.indexOf("%ZZbad") !== -1, "should keep the malformed percent sequence");
 });
 
-// ── Shell install command logic ────────────────────────────────────────────
-// The QML Process builds this shell command:
-//
-//   home="${HOME:-<fallback>}"; dst="$home/.local/bin/omarchy-dictionary-lookup";
-//   mkdir -p "$home/.local/bin" &&
-//   if [ ! -f "$dst" ] || ! cmp -s '<src>' "$dst"; then
-//     install -m755 '<src>' "$dst" && echo installed;
-//   fi
-//
-// We test a simplified version that targets a temp directory.
+// ── Staged install logic ───────────────────────────────────────────────────
+// Mirrors the QML stages in BarWidget.qml (mkdirProc → cmpProc → installProc),
+// with paths passed as argv just like the QML `command` lists — no shell, no
+// quoting. Returns "installed" when install(1) ran, "" when the destination
+// already matched (silent) or the install failed.
 
 var SRC = path.join(__dirname, "..", "scripts", "omarchy-dictionary-lookup");
 
 function runInstall(src, dst) {
-  // Write a small shell script to avoid JSON.stringify quoting hell.
-  var script = [
-    "#!/bin/sh",
-    "set -eu",
-    "dst=" + dst,
-    "mkdir -p \"$(dirname \"$dst\")\"",
-    "if [ ! -f \"$dst\" ] || ! cmp -s '" + src + "' \"$dst\"; then",
-    "  install -m755 '" + src + "' \"$dst\" && echo installed",
-    "fi"
-  ].join("\n");
-  var tmp = path.join(os.tmpdir(), "dict-test-" + process.pid + "-" + Date.now() + ".sh");
-  fs.writeFileSync(tmp, script, { mode: 0o755 });
   try {
-    return execSync(tmp, { encoding: "utf8", timeout: 5000 }).trim();
+    execFileSync("mkdir", ["-p", path.dirname(dst)]);
   } catch (e) {
-    return (e.stdout || "").trim();
-  } finally {
-    try { fs.unlinkSync(tmp); } catch (_) {}
+    return "";
+  }
+  var same = false;
+  try {
+    execFileSync("cmp", ["-s", src, dst]);
+    same = true;
+  } catch (e) {
+    same = false;
+  }
+  if (same) return "";
+  try {
+    execFileSync("install", ["-m755", src, dst]);
+    return "installed";
+  } catch (e) {
+    return "";
   }
 }
 
