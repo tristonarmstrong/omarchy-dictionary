@@ -56,35 +56,58 @@ BarWidget {
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
 
-  // ---- Auto-install the selection-lookup script. The hotkey path needs
-  //      `omarchy-dictionary-lookup` on $PATH; rather than ask the user to
-  //      copy it manually, we install it to ~/.local/bin/ on first load.
-  //      Hyprland binding is the only remaining manual step (see README).
+  // ---- Manual install for the selection-lookup script. The hotkey path
+  //      needs `omarchy-dictionary-lookup` on $PATH. The panel footer
+  //      offers an explicit "Install" button that calls
+  //      installHotkeyScript() — nothing is written to ~/.local/bin/
+  //      without the user clicking it.
   //
-  //      ~/.local/bin is the right home for it: it is the XDG user binary
-  //      directory and Omarchy puts it on PATH for both shells and Hyprland
-  //      bindings (see $OMARCHY_PATH/default/bash/env-bootstrap). Nothing
-  //      creates it on a fresh install, so the first stage below is mkdir -p
-  //      and the destination directory is never assumed to exist.
+  //      ~/.local/bin is the XDG user binary directory and Omarchy puts
+  //      it on PATH for both shells and Hyprland bindings (see
+  //      $OMARCHY_PATH/default/bash/env-bootstrap).
   //
   //      The install runs as three shell-free Process stages (mkdir, cmp,
   //      install) with paths passed as argv, never interpolated into an
   //      `sh -c` string — so spaces or unusual characters in $HOME or the
   //      plugin path can never break shell quoting. cmp exit 0 means the
-  //      installed copy is already identical, so the notify only fires when
-  //      install(1) actually ran and subsequent restarts are silent.
-  //      Failures are reported via console.warn instead of failing silently.
+  //      installed copy is already identical, so install(1) is skipped
+  //      and the status becomes "up-to-date". Failures are reported via
+  //      installStatus/installMessage and console.warn.
   //
   //      Qt.resolvedUrl returns a file:// URL which the filesystem can't read
   //      directly — strip the scheme so cmp/install see a plain path.
   function notify(title, body) {
-    var bin = Quickshell.env("OMARCHY_PATH") + "/bin/omarchy-notification-send"
+    var omarchyPath = Quickshell.env("OMARCHY_PATH") || ""
+    if (omarchyPath === "") {
+      console.warn("omarchy-dictionary notify: OMARCHY_PATH is empty, skipping notification")
+      return
+    }
+    var bin = omarchyPath + "/bin/omarchy-notification-send"
     Quickshell.execDetached([bin, title, body])
   }
 
   readonly property string homeDir: Quickshell.env("HOME") || ""
   readonly property string binDir: homeDir + "/.local/bin"
   readonly property string destPath: binDir + "/omarchy-dictionary-lookup"
+
+  // Install status surfaced to the panel footer. idle = never attempted
+  // this session, working = a stage is running, up-to-date = cmp matched,
+  // installed = install(1) ran, error = mkdir/cmp/install failed.
+  property string installStatus: "idle"
+  property string installMessage: ""
+
+  function installHotkeyScript() {
+    if (root.homeDir === "") {
+      root.installStatus = "error"
+      root.installMessage = "HOME is empty, cannot install."
+      console.warn("omarchy-dictionary install: HOME is empty, skipping script install")
+      return
+    }
+    if (root.installStatus === "working") return
+    root.installStatus = "working"
+    root.installMessage = "Installing…"
+    mkdirProc.running = true
+  }
 
   // Util.fileUrl encodes every path segment, so Qt.resolvedUrl returns a
   // percent-encoded URL.  decodeURIComponent turns it back into a real
@@ -104,6 +127,8 @@ BarWidget {
     }
     onExited: function(exitCode) {
       if (exitCode !== 0) {
+        root.installStatus = "error"
+        root.installMessage = "Could not create ~/.local/bin."
         console.warn("omarchy-dictionary install: mkdir failed for", root.binDir)
         return
       }
@@ -118,9 +143,14 @@ BarWidget {
       onRead: function(line) { console.warn("omarchy-dictionary install:", line) }
     }
     onExited: function(exitCode) {
-      // 0 = identical, stay silent. Anything else — differ (1) or
+      // 0 = identical, already installed. Anything else — differ (1) or
       // missing/unreadable (2) — means install.
-      if (exitCode !== 0) installProc.running = true
+      if (exitCode === 0) {
+        root.installStatus = "up-to-date"
+        root.installMessage = "Already installed and up to date."
+      } else {
+        installProc.running = true
+      }
     }
   }
 
@@ -132,18 +162,14 @@ BarWidget {
     }
     onExited: function(exitCode) {
       if (exitCode === 0) {
+        root.installStatus = "installed"
+        root.installMessage = "Installed to ~/.local/bin/omarchy-dictionary-lookup."
         root.notify("Dictionary", "Installed system script: ~/.local/bin/omarchy-dictionary-lookup")
       } else {
+        root.installStatus = "error"
+        root.installMessage = "Install failed."
         console.warn("omarchy-dictionary install: install failed for", root.destPath)
       }
-    }
-  }
-
-  Component.onCompleted: {
-    if (root.homeDir === "") {
-      console.warn("omarchy-dictionary install: HOME is empty, skipping script install")
-    } else {
-      mkdirProc.running = true
     }
   }
 

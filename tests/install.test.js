@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 "use strict";
 
-// Tests for the auto-install mechanism in BarWidget.qml.
+// Tests for the manual-install mechanism in BarWidget.qml (triggered by the
+// panel footer's Install button via installHotkeyScript()).
 //
 // The QML widget copies the lookup script from the plugin's scripts/
 // directory to ~/.local/bin/ in three shell-free Process stages with paths

@@ -50,16 +50,18 @@ word in any application:
 o.bind("SUPER + D", "Look up selection in dictionary", "omarchy-dictionary-lookup")
 ```
 
-The plugin auto-installs the bundled `scripts/omarchy-dictionary-lookup` to
-`~/.local/bin/` on first load (idempotent — re-runs only when the bundled
-copy changes), so no manual install step is needed. The script reads the
+The plugin bundles `scripts/omarchy-dictionary-lookup` but never installs
+it on its own. Open the dictionary panel and use the
+**Install hotkey script** section at the bottom (border-separated footer
+with an Install button) to copy it to `~/.local/bin/` (idempotent —
+re-runs only when the bundled copy changes). The script reads the
 Wayland primary selection (highlighted text), falls back to the clipboard
 if empty, extracts the first alphabetic word, and opens the dictionary
 panel with that word pre-filled. With nothing selected it just opens the
 empty panel.
 
-> **Note:** A desktop notification confirms when the script is first
-> installed. You may want to inspect it before use — review
+> **Note:** A desktop notification confirms when the script is installed.
+> You may want to inspect it before use — review
 > `scripts/omarchy-dictionary-lookup` in the plugin repo, or run
 > `cat ~/.local/bin/omarchy-dictionary-lookup` to see what was installed.
 

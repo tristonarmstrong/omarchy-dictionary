@@ -64,6 +64,11 @@ function languages() { return LANGUAGES }
 // the curl argv array that the QML Process element runs.
 function apiBase(langCode) {
   var code = String(langCode || defaultLanguage()).trim().toLowerCase() || defaultLanguage()
+  // Allowlist: only known Wiktionary editions may become a subdomain.
+  // Without this, a future caller passing an arbitrary string could turn
+  // the URL into an attacker domain via fragment/host tricks
+  // (e.g. "evil.com#"). Falls back to the default language.
+  if (!LANG_BY_VALUE[code]) code = defaultLanguage()
   return "https://" + code + ".wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&format=json&titles="
 }
 
