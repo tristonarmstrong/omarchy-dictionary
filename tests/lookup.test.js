@@ -108,10 +108,8 @@ test("whitespace-only returns empty", () => {
   assert.strictEqual(callExtractWord("   "), "");
 });
 
-test("unicode letters are excluded (script targets ASCII)", () => {
-  // café's "fé" has accented chars — grep -oP '[a-zA-Z]+' will stop at é
-  // because é is not in [a-zA-Z]. Verify the contract: ASCII letters only.
-  assert.strictEqual(callExtractWord("café"), "caf");
+test("digits are not letters", () => {
+  assert.strictEqual(callExtractWord("123"), "");
 });
 
 // ── wayland_display helper tests ─────────────────────────────────────────────
@@ -216,6 +214,93 @@ test("with empty selection: calls 'toggle' to open empty popup", () => {
 
 test("with whitespace-only selection: calls 'toggle'", () => {
   var result = callMainFlow("   ");
+  assert.strictEqual(result, "-q tristonarmstrong.dictionary toggle");
+});
+
+group("extract_word — non-Latin scripts");
+
+test("Chinese term is returned whole", () => {
+  assert.strictEqual(callExtractWord("字典"), "字典");
+});
+
+test("Japanese term is returned whole", () => {
+  assert.strictEqual(callExtractWord("日本語"), "日本語");
+});
+
+test("kana is matched, not just Han", () => {
+  assert.strictEqual(callExtractWord("ひらがな"), "ひらがな");
+});
+
+test("Korean term is returned whole", () => {
+  assert.strictEqual(callExtractWord("한글"), "한글");
+});
+
+test("Cyrillic term is returned whole", () => {
+  assert.strictEqual(callExtractWord("слово"), "слово");
+});
+
+test("Greek term is returned whole", () => {
+  assert.strictEqual(callExtractWord("λόγος"), "λόγος");
+});
+
+test("Arabic term is returned whole", () => {
+  assert.strictEqual(callExtractWord("قاموس"), "قاموس");
+});
+
+test("accented Latin is no longer truncated", () => {
+  assert.strictEqual(callExtractWord("café"), "café");
+});
+
+group("extract_word — CJK punctuation splits terms");
+
+test("corner brackets are separators", () => {
+  assert.strictEqual(callExtractWord("「字典」的用法"), "字典");
+});
+
+test("fullwidth parentheses are separators", () => {
+  assert.strictEqual(callExtractWord("（漢字）"), "漢字");
+});
+
+test("ideographic comma is a separator", () => {
+  assert.strictEqual(callExtractWord("字典、辭典"), "字典");
+});
+
+test("katakana middle dot is a separator", () => {
+  assert.strictEqual(callExtractWord("アンドレ・ジード"), "アンドレ");
+});
+
+test("prolonged sound mark stays inside the word (U+30FC is Lm)", () => {
+  assert.strictEqual(callExtractWord("コーヒー"), "コーヒー");
+});
+
+test("CJK punctuation alone yields nothing", () => {
+  assert.strictEqual(callExtractWord("、。「」"), "");
+});
+
+group("extract_word — first run wins regardless of script");
+
+test("CJK before ASCII", () => {
+  assert.strictEqual(callExtractWord("查詢 dictionary"), "查詢");
+});
+
+test("ASCII before CJK", () => {
+  assert.strictEqual(callExtractWord("dictionary 查詢"), "dictionary");
+});
+
+group("main flow — non-Latin dispatch");
+
+test("with a Chinese selection: calls 'search' with the term", () => {
+  var result = callMainFlow("字典");
+  assert.strictEqual(result, "-q tristonarmstrong.dictionary search 字典");
+});
+
+test("with a mixed selection: searches the first term", () => {
+  var result = callMainFlow("查詢 dictionary 這個字");
+  assert.strictEqual(result, "-q tristonarmstrong.dictionary search 查詢");
+});
+
+test("with CJK punctuation only: calls 'toggle'", () => {
+  var result = callMainFlow("、。「」");
   assert.strictEqual(result, "-q tristonarmstrong.dictionary toggle");
 });
 
