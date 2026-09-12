@@ -13,6 +13,12 @@
 
 set -euo pipefail
 
+# grep -P only enters UTF-8 mode under a UTF-8 locale. Under LC_ALL=C the
+# \p{L} below degrades to byte matching and returns mojibake — "café" comes
+# back as "caf\xc3", a word nothing will ever match — without erroring. The
+# hotkey must not depend on what the compositor happens to export.
+export LC_ALL=C.UTF-8
+
 # wayland_display
 #   Hyprland doesn't export WAYLAND_DISPLAY to commands it spawns (unlike
 #   processes launched from a terminal). wl-paste then defaults to
@@ -31,10 +37,26 @@ wayland_display() {
 }
 
 # extract_word <string>
-#   Returns the first run of ASCII letters in $1, or empty string if none.
+#   Returns the first run of letters in $1, or empty string if none.
 #   Pure function — no I/O, no side effects.
+#
+#   \p{L} rather than [a-zA-Z]: the ASCII class matched nothing in Chinese,
+#   Japanese, Korean, Greek, Cyrillic, Arabic or Hebrew, so the caller fell
+#   through to `toggle` and the hotkey opened an empty panel. Unicode letter
+#   also fixes accented Latin, which used to truncate ("café" -> "caf").
+#
+#   Punctuation falls outside \p{L} in every script, so the CJK brackets and
+#   separators that carry no spaces still split terms: 「字典」的用法 -> 字典,
+#   アンドレ・ジード -> アンドレ. The katakana prolonged sound mark U+30FC is
+#   Lm, so コーヒー survives intact.
+#
+#   Limitation: scripts without word delimiters (CJK, Thai) have no boundary
+#   to find, so "first run" is the whole contiguous span. Selecting a term
+#   works; selecting a sentence sends the sentence and Wiktionary misses.
+#   Segmenting properly needs a tokenizer, which is more than a hotkey should
+#   carry.
 extract_word() {
-  printf '%s' "${1:-}" | grep -oP '[a-zA-Z]+' | head -n1 || true
+  printf '%s' "${1:-}" | grep -oP '\p{L}+' | head -n1 || true
 }
 
 # read_selection

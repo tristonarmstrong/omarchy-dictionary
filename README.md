@@ -56,9 +56,13 @@ it on its own. Open the dictionary panel and use the
 with an Install button) to copy it to `~/.local/bin/` (idempotent —
 re-runs only when the bundled copy changes). The script reads the
 Wayland primary selection (highlighted text), falls back to the clipboard
-if empty, extracts the first alphabetic word, and opens the dictionary
-panel with that word pre-filled. With nothing selected it just opens the
-empty panel.
+if empty, extracts the first word, and opens the dictionary panel with that
+word pre-filled. With nothing selected it just opens the empty panel.
+
+Word extraction is script-agnostic — Chinese, Japanese, Korean, Greek,
+Cyrillic, Arabic and accented Latin all work. Note that CJK and Thai have no
+word delimiters, so a selection spanning several terms is sent as one string
+and will miss; highlight the single term you want.
 
 > **Note:** A desktop notification confirms when the script is installed.
 > You may want to inspect it before use — review
@@ -91,8 +95,9 @@ qmllint -I "$OMARCHY_PATH/shell" \
 bash tests/run.sh
 ```
 
-Runs three suites — QML lint checks (2), Model.js unit tests (240), and
-the lookup-script tests (22) — 264 tests total. Model.js is parsed
+Runs four suites — QML lint checks (2), Model.js unit tests (240),
+the lookup-script tests (41), and the install-stage tests (14) — 297 tests
+total. Model.js is parsed
 in-process; the lookup script's pure functions are exercised in a
 subprocess with stubbed `wl-paste` and `omarchy-shell` so the suite
 needs no Wayland session or running shell.
