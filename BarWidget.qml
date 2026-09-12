@@ -93,6 +93,11 @@ BarWidget {
   // Install status surfaced to the panel footer. idle = never attempted
   // this session, working = a stage is running, up-to-date = cmp matched,
   // installed = install(1) ran, error = mkdir/cmp/install failed.
+  //
+  // "up-to-date" is also set by the startup check below when the installed
+  // copy already matches the bundled script, so the panel footer can stay
+  // hidden across shell restarts instead of reappearing every session
+  // (issue #9).
   property string installStatus: "idle"
   property string installMessage: ""
 
@@ -171,6 +176,32 @@ BarWidget {
         console.warn("omarchy-dictionary install: install failed for", root.destPath)
       }
     }
+  }
+
+  // Startup check: is the bundled script already installed and identical?
+  // Runs once via Component.onCompleted. cmp -s exit 0 marks the script
+  // "up-to-date" so the panel footer stays hidden across restarts; any
+  // other exit (missing, stale, unreadable) leaves "idle" so the footer
+  // offers the install. This check never writes — install(1) still only
+  // runs when the user clicks Install — and never clobbers a
+  // user-triggered install that started before the check finished.
+  Process {
+    id: installedCheckProc
+    command: ["cmp", "-s", root.scriptPath, root.destPath]
+    stderr: SplitParser {
+      onRead: function(line) { console.warn("omarchy-dictionary install check:", line) }
+    }
+    onExited: function(exitCode) {
+      if (exitCode === 0 && root.installStatus === "idle") {
+        root.installStatus = "up-to-date"
+        root.installMessage = "Already installed and up to date."
+      }
+    }
+  }
+
+  Component.onCompleted: {
+    if (root.homeDir !== "" && root.installStatus === "idle")
+      installedCheckProc.running = true
   }
 
   Loader {

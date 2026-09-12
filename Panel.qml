@@ -103,6 +103,17 @@ Panel {
   // clobber isAutoMatched and originalQuery mid-fetch).
   property bool programmaticEdit: false
 
+  // True once the hotkey script is confirmed installed — "installed" after
+  // a successful click-to-install this session, "up-to-date" when the
+  // startup check found the installed copy identical. Drives the footer
+  // visibility below so the prompt dismisses itself after install
+  // (issue #9).
+  readonly property bool hotkeyScriptInstalled: {
+    if (!root.hostWidget) return false
+    var s = root.hostWidget.installStatus
+    return s === "installed" || s === "up-to-date"
+  }
+
   readonly property color contentForeground: bar ? bar.foreground : Color.foreground
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
 
@@ -936,13 +947,21 @@ Column {
         // Install. Status comes from the host BarWidget
         // (installStatus/installMessage) which runs the mkdir/cmp/install
         // stages shell-free.
+        //
+        // The footer (and its separator) hide once the script is confirmed
+        // installed — either installed this session or verified up-to-date
+        // by the startup check — so the prompt doesn't linger after
+        // install (issue #9). It stays visible while idle/working/error so
+        // progress, failure messages, and retry remain reachable.
         PanelSeparator {
           foreground: root.contentForeground
+          visible: !root.hotkeyScriptInstalled
         }
 
         Column {
           width: parent.width
           spacing: Style.space(6)
+          visible: !root.hotkeyScriptInstalled
 
           Row {
             width: parent.width
