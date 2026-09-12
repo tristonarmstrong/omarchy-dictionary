@@ -248,6 +248,76 @@ test("installed script has 755 permissions", () => {
   }
 });
 
+// ── Startup install-state check & footer visibility ───────────────────────
+// Mirrors the new logic in BarWidget.qml / Panel.qml (issue #9):
+//
+// BarWidget runs `cmp -s <src> <dst>` once at startup. cmp exit 0 marks the
+// script "up-to-date" so the panel footer stays hidden across restarts;
+// any other exit (missing/stale/unreadable) leaves "idle" so the footer
+// offers the install. The check never writes and never clobbers a
+// user-triggered install that started before the check finished.
+//
+// Panel.qml hides the hotkey-script footer (and its separator) when
+// installStatus is "installed" or "up-to-date".
+
+function startupCheckStatus(cmpExit, currentStatus, homeDir) {
+  if (homeDir === "") return currentStatus;
+  if (cmpExit === 0 && currentStatus === "idle") return "up-to-date";
+  return currentStatus;
+}
+
+function footerVisible(installStatus) {
+  return installStatus !== "installed" && installStatus !== "up-to-date";
+}
+
+group("startup check — marks up-to-date");
+
+test("cmp exit 0 on a fresh start marks the script up-to-date", () => {
+  assert.strictEqual(startupCheckStatus(0, "idle", "/home/user"), "up-to-date");
+});
+
+test("does not clobber a user-triggered install in flight", () => {
+  assert.strictEqual(startupCheckStatus(0, "working", "/home/user"), "working");
+});
+
+test("does not clobber a finished install", () => {
+  assert.strictEqual(startupCheckStatus(0, "installed", "/home/user"), "installed");
+});
+
+test("stays idle when the installed copy is stale (cmp exit 1)", () => {
+  assert.strictEqual(startupCheckStatus(1, "idle", "/home/user"), "idle");
+});
+
+test("stays idle when the script was never installed (cmp exit 2)", () => {
+  assert.strictEqual(startupCheckStatus(2, "idle", "/home/user"), "idle");
+});
+
+test("skips the check when HOME is empty", () => {
+  assert.strictEqual(startupCheckStatus(0, "idle", ""), "idle");
+});
+
+group("footer visibility — issue #9");
+
+test("footer shows before any install (idle)", () => {
+  assert.strictEqual(footerVisible("idle"), true);
+});
+
+test("footer shows while installing (working)", () => {
+  assert.strictEqual(footerVisible("working"), true);
+});
+
+test("footer shows after a failed install (error)", () => {
+  assert.strictEqual(footerVisible("error"), true);
+});
+
+test("footer hides after a successful install (installed)", () => {
+  assert.strictEqual(footerVisible("installed"), false);
+});
+
+test("footer hides when verified up-to-date at startup", () => {
+  assert.strictEqual(footerVisible("up-to-date"), false);
+});
+
 // ── Summary ────────────────────────────────────────────────────────────────
 console.log("\n" + (_pass + _fail) + " total, " + _pass + " passed, " + _fail + " failed");
 if (_fail > 0) process.exit(1);

@@ -54,7 +54,12 @@ The plugin bundles `scripts/omarchy-dictionary-lookup` but never installs
 it on its own. Open the dictionary panel and use the
 **Install hotkey script** section at the bottom (border-separated footer
 with an Install button) to copy it to `~/.local/bin/` (idempotent —
-re-runs only when the bundled copy changes). The script reads the
+re-runs only when the bundled copy changes). Once installed, the footer
+dismisses itself — the plugin re-verifies the installed copy against the
+bundled script at startup (via `cmp`) and keeps the footer hidden while
+they match, so the prompt doesn't reappear after a shell restart. If the
+bundled script ever changes, the footer returns to offer the update.
+The script reads the
 Wayland primary selection (highlighted text), falls back to the clipboard
 if empty, extracts the first word, and opens the dictionary panel with that
 word pre-filled. With nothing selected it just opens the empty panel.
@@ -96,7 +101,7 @@ bash tests/run.sh
 ```
 
 Runs four suites — QML lint checks (2), Model.js unit tests (240),
-the lookup-script tests (41), and the install-stage tests (14) — 297 tests
+the lookup-script tests (41), and the install-stage tests (25) — 308 tests
 total. Model.js is parsed
 in-process; the lookup script's pure functions are exercised in a
 subprocess with stubbed `wl-paste` and `omarchy-shell` so the suite
