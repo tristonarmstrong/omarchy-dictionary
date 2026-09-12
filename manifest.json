@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "tristonarmstrong.dictionary",
   "name": "Dictionary",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "author": "Triston Armstrong",
-  "description": "Look up word definitions across 23 Wiktionary editions directly in the Omarchy bar. PLUS press meta+D to auto search highlighted words",
+  "description": "Look up word definitions across 23 Wiktionary editions directly in the Omarchy bar — English works offline via Webster's 1913. PLUS press meta+D to auto search highlighted words",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Dictionary",
-    "description": "Look up word definitions across 23 Wiktionary editions directly in the Omarchy bar. PLUS press meta+D to auto search highlighted words",
+    "description": "Look up word definitions across 23 Wiktionary editions directly in the Omarchy bar — English works offline via Webster's 1913. PLUS press meta+D to auto search highlighted words",
     "category": "Reference",
     "allowMultiple": false
   }

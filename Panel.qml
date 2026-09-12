@@ -103,6 +103,15 @@ Panel {
   // clobber isAutoMatched and originalQuery mid-fetch).
   property bool programmaticEdit: false
 
+  // ---- Adapter chain. Model.adaptersFor(language) returns the ordered list
+  //      of dictionary sources for the current language — e.g. English
+  //      resolves to [webster1913, wiktionary], offline-first with a network
+  //      fallback. The panel tries the chain in order; the first ok result
+  //      wins and any other outcome advances to the next adapter. Adding a
+  //      future source is a new adapter plus one line in Model.js.
+  property var adapterQueue: []
+  property int adapterIndex: 0
+
   // True once the hotkey script is confirmed installed — "installed" after
   // a successful click-to-install this session, "up-to-date" when the
   // startup check found the installed copy identical. Drives the footer
@@ -122,6 +131,16 @@ Panel {
   readonly property int panelMaxHeight: Style.space(620)
   readonly property int searchDelayMs: 250
 
+  // Bundled offline dictionary data (data/webster). Same URL-to-path
+  // treatment as BarWidget's scriptPath: Qt.resolvedUrl returns a
+  // percent-encoded file:// URL, so strip the scheme and decode it back
+  // into a real filesystem path for the lookup process.
+  readonly property string dataDir: {
+    var url = String(Qt.resolvedUrl("data/webster"))
+    var raw = url.replace(/^file:\/\//, "/")
+    try { return decodeURIComponent(raw) } catch (e) { return raw }
+  }
+
   // ---- Reset all result-related state back to idle. Called from search(),
   //      runLookup(), applyEdited(), and the language-change handler.
   function resetResults() {
@@ -134,10 +153,13 @@ Panel {
     root.isAutoMatched = false
   }
 
-  // Inject the bundled wordlist into Model.js so fuzzyMatch() can use it.
+  // Inject the bundled wordlist into Model.js so fuzzyMatch() can use it,
+  // and the bundled offline data dir so the local adapter can find it.
   Component.onCompleted: {
     if (typeof Model.setWordlist === "function" && typeof Wordlist.ENGLISH_WORDLIST !== "undefined")
       Model.setWordlist(Wordlist.ENGLISH_WORDLIST)
+    if (typeof Model.setDataDir === "function")
+      Model.setDataDir(root.dataDir)
   }
 
   // ---- Bindings need the source data checked before any property
@@ -168,8 +190,9 @@ Panel {
 
   // ---- Lookup. The active query is the one in the field; if it changes
   //      while a request is in flight we kill the running process so a
-  //      stale response can't overwrite the newer one. Curl writes JSON to
-  //      stdout; we parse it once on completion.
+  //      stale response can't overwrite the newer one. Each adapter writes
+  //      to stdout; we parse it once on completion and advance down the
+  //      chain until one succeeds.
   function runLookup() {
     var q = String(searchField.text || "").trim()
     root.query = q
@@ -178,16 +201,95 @@ Panel {
       root.resetResults()
       return
     }
-    var args = Model.lookupArgs(q, root.language)
-    if (args.length === 0) return
+    root.adapterQueue = (typeof Model.adaptersFor === "function")
+      ? Model.adaptersFor(root.language) : []
+    root.adapterIndex = 0
 
     root.status = "loading"
     root.statusMessage = ""
     root.resetResults()
     root.status = "loading"
-    if (lookupProc.running) lookupProc.running = false
-    lookupProc.command = args
-    lookupProc.running = true
+    runAdapter()
+  }
+
+  // Run the current adapter in the chain. Adapters whose argsFor() yields
+  // no argv (e.g. the local adapter with no data dir, or an empty query)
+  // are skipped without touching the process.
+  function runAdapter() {
+    while (root.adapterIndex < root.adapterQueue.length) {
+      var adapter = root.adapterQueue[root.adapterIndex]
+      var args = []
+      try {
+        args = adapter.argsFor(root.query, root.language) || []
+      } catch (e) {
+        console.warn("omarchy-dictionary: adapter", adapter && adapter.id, "argsFor failed:", e)
+      }
+      if (args.length > 0) {
+        if (lookupProc.running) lookupProc.running = false
+        lookupProc.command = args
+        lookupProc.running = true
+        return
+      }
+      root.adapterIndex++
+    }
+    // No adapter could even start — handle as an exhausted chain.
+    onAdapterChainExhausted({ ok: false, kind: "error", error: "no dictionary source available" })
+  }
+
+  // Advance to the next adapter in the chain. Returns true when another
+  // adapter started; false when the chain is exhausted.
+  function tryNextAdapter() {
+    root.adapterIndex++
+    if (root.adapterIndex < root.adapterQueue.length) {
+      runAdapter()
+      return true
+    }
+    return false
+  }
+
+  // The whole chain failed. `result` is the last adapter's outcome and
+  // drives the same end states a single-source lookup used to produce:
+  // notfound-ish results get fuzzy recovery, anything else is an error.
+  function onAdapterChainExhausted(result) {
+    root.entry = null
+    if (result && (result.kind === "notfound" || result.kind === "invalid" || result.kind === "empty")) {
+      if (root.isAutoMatched) {
+        // Recovery round tripped without finding a working word —
+        // don't loop, just show the notfound state.
+        root.originalQuery = ""
+        root.isAutoMatched = false
+        root.status = "notfound"
+        root.statusMessage = "no definition found"
+        return
+      }
+      root.originalQuery = root.query
+      var fuzzy = Model.fuzzyMatch(root.query)
+      if (fuzzy && fuzzy.autoMatch) {
+        // Rewrite the field to the candidate so the user can see what
+        // we fetched, keep it marked "auto", and fetch it. The next
+        // round will see isAutoMatched === true on any further 404.
+        // programmaticEdit suppresses applyEdited's user-reset clauses
+        // while the field is being updated by us, not the user.
+        root.isAutoMatched = true
+        root.programmaticEdit = true
+        searchField.text = fuzzy.autoMatch
+        root.query = fuzzy.autoMatch
+        root.programmaticEdit = false
+        root.runLookup()
+        return
+      }
+      if (fuzzy && fuzzy.alternatives && fuzzy.alternatives.length > 0) {
+        root.suggestions = fuzzy.alternatives
+        root.status = "suggestions"
+        root.statusMessage = "no definition found for \"" + root.originalQuery + "\""
+      } else {
+        root.status = "notfound"
+        root.statusMessage = "no definition found for \"" + root.originalQuery + "\""
+      }
+    } else {
+      root.status = "error"
+      root.statusMessage = (result && result.error) || "could not look up the word"
+    }
   }
 
   // The grammar of "search" — Enter fires immediately; typing clears any
@@ -214,16 +316,24 @@ Panel {
     }
   }
 
-  // Curl process. Curl exits 22 on the not-found path (HTTP 404), which
-  // is not a network error from the user's perspective; the response body
-  // carries the API's own message, so we always try to parse it.
+  // Lookup process. Each adapter in the chain gets one run of this process:
+  // curl for the network adapters, gzip for the local one. Curl exits 22
+  // on the not-found path (HTTP 404), which is not a network error from
+  // the user's perspective; the response body carries the API's own
+  // message, so we always try to parse stdout first.
   Process {
     id: lookupProc
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
         if (root.status !== "loading") return
-        var result = Model.parseResponse(text, root.language)
+        var adapter = root.adapterQueue[root.adapterIndex]
+        var result = null
+        try {
+          result = adapter.parse(text, root.query, root.language)
+        } catch (e) {
+          console.warn("omarchy-dictionary: adapter", adapter && adapter.id, "parse failed:", e)
+        }
         if (result && result.ok) {
           root.entry = result.entry
           root.variants = result.variants || 0
@@ -231,51 +341,13 @@ Panel {
           root.statusMessage = ""
           // originalQuery stays put when isAutoMatched is true so the
           // result body can render "showing 'X' for 'Y'".
-        } else if (result && (result.kind === "notfound" || result.kind === "invalid" || result.kind === "empty")) {
-          // Fuzzy recovery covers more than the explicit notfound body —
-          // the Free Dictionary API has been observed returning HTTP 502
-          // (Cloudflare error page) for typos instead of 404, which the
-          // parser surfaces as `invalid`/`empty`. Trying fuzzy in those
-          // cases saves a user round-trip. Genuine network failures fall
-          // through to the error branch below.
-          root.entry = null
-          if (root.isAutoMatched) {
-            // Recovery round tripped without finding a working word —
-            // don't loop, just show the notfound state.
-            root.originalQuery = ""
-            root.isAutoMatched = false
-            root.status = "notfound"
-            root.statusMessage = "no definition found"
-            return
-          }
-          root.originalQuery = root.query
-          var fuzzy = Model.fuzzyMatch(root.query)
-          if (fuzzy && fuzzy.autoMatch) {
-            // Rewrite the field to the candidate so the user can see what
-            // we fetched, keep it marked "auto", and fetch it. The next
-            // round will see isAutoMatched === true on any further 404.
-            // programmaticEdit suppresses applyEdited's user-reset clauses
-            // while the field is being updated by us, not the user.
-            root.isAutoMatched = true
-            root.programmaticEdit = true
-            searchField.text = fuzzy.autoMatch
-            root.query = fuzzy.autoMatch
-            root.programmaticEdit = false
-            root.runLookup()
-            return
-          }
-          if (fuzzy && fuzzy.alternatives && fuzzy.alternatives.length > 0) {
-            root.suggestions = fuzzy.alternatives
-            root.status = "suggestions"
-            root.statusMessage = "no definition found for \"" + root.originalQuery + "\""
-          } else {
-            root.status = "notfound"
-            root.statusMessage = "no definition found for \"" + root.originalQuery + "\""
-          }
+        } else if (root.tryNextAdapter()) {
+          // A miss or failure in one adapter falls through to the next —
+          // e.g. a word missing from the local Webster's is retried
+          // against Wiktionary when online.
+          return
         } else {
-          root.entry = null
-          root.status = "error"
-          root.statusMessage = (result && result.error) || "could not look up the word"
+          root.onAdapterChainExhausted(result)
         }
       }
     }
@@ -285,11 +357,13 @@ Panel {
     }
     onExited: function(exitCode) {
       if (root.status !== "loading") return
-      // The not-found branch usually comes back via stdout (the API
-      // returns a JSON error body on 404), and we already handled it.
-      // This is the catch-all for the times we never get that body —
-      // DNS, TLS, refused connection. Curl's HTTP 404 exit (22) lands
-      // here with no parsed body, so surface it as a fetch error.
+      // Stale exit: the chain already advanced and restarted the process
+      // for the next adapter (its onStreamFinished ran first).
+      if (lookupProc.running) return
+      // The process died without parseable stdout — DNS/TLS/refused
+      // connection for curl, a missing data file for gzip. Advance the
+      // chain; only when every adapter has failed do we surface the error.
+      if (root.tryNextAdapter()) return
       root.entry = null
       root.status = "error"
       root.statusMessage = "could not reach the dictionary service"
@@ -838,6 +912,10 @@ Column {
                   Row {
                     width: parent.width
                     spacing: Style.space(8)
+                    // Some offline entries never declare a part of speech
+                    // (letters, prefixes) — render their definitions with
+                    // no header instead of an empty gold label.
+                    visible: modelData.partOfSpeech !== ""
 
                     Text {
                       text: modelData.partOfSpeech

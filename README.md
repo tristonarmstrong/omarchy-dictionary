@@ -1,9 +1,14 @@
 # Omarchy Dictionary
 
-A Quickshell bar widget for Omarchy that looks up word definitions from
-Wiktionary, with support for 23 language editions, fuzzy "did you mean?"
-suggestions, and a global hotkey for looking up highlighted text anywhere
-on your system.
+A Quickshell bar widget for Omarchy that looks up word definitions, with
+support for 23 language editions, fuzzy "did you mean?" suggestions, and a
+global hotkey for looking up highlighted text anywhere on your system.
+
+English works fully offline via a bundled Webster's 1913 dictionary; other
+editions use Wiktionary over the network. Dictionary sources are pluggable
+adapters tried in order — English resolves to
+`[Webster's 1913 → Wiktionary]`, so a word missing from the 1913 text (or
+any local miss) falls back to the network when you're online.
 
 Click the bar icon to open a search field. Type a word and press Enter to
 look it up. Use the language dropdown in the panel header to switch editions
@@ -15,8 +20,33 @@ up to three similar words are suggested as clickable chips.
 ## Requirements
 
 - Omarchy (uses the Quickshell bar plugin system)
-- Network access to `*.wiktionary.org` — no API key or signup required
 - `wl-clipboard` for the global selection hotkey — preinstalled on Omarchy
+- Network access to `*.wiktionary.org` — only needed for non-English
+  editions and as a fallback when a word isn't in the offline dictionary;
+  English lookups work with no network at all
+
+## Offline support
+
+English definitions ship with the plugin: 108,181 headwords from
+Webster's New International Dictionary (1913), via the GCIDE XML dataset,
+compressed into per-letter files under `data/webster/` (~6 MB total).
+Lookups read the one relevant letter file with `gzip` — no new runtime
+dependencies.
+
+Dictionary sources are adapters (`Model.js`: `ADAPTERS`). Each adapter
+declares the languages it serves plus an `argsFor`/`parse` pair, and the
+panel tries them in order until one succeeds. Adding a future source is a
+new adapter object and one line in the registry.
+
+To rebuild the data files from the upstream source:
+
+```sh
+scripts/build-webster.py   # downloads GCIDE XML, writes data/webster/*.json.gz
+```
+
+The raw XML is gitignored; only the generated files are committed.
+Licensing: the 1913 Webster's core text is public domain, but GCIDE's
+markup and additions are GPL — see `data/webster/LICENSE-DATA.txt`.
 
 ## Install
 
@@ -100,8 +130,8 @@ qmllint -I "$OMARCHY_PATH/shell" \
 bash tests/run.sh
 ```
 
-Runs four suites — QML lint checks (2), Model.js unit tests (240),
-the lookup-script tests (41), and the install-stage tests (25) — 308 tests
+Runs four suites — QML lint checks (2), Model.js unit tests (273),
+the lookup-script tests (41), and the install-stage tests (25) — 341 tests
 total. Model.js is parsed
 in-process; the lookup script's pure functions are exercised in a
 subprocess with stubbed `wl-paste` and `omarchy-shell` so the suite
