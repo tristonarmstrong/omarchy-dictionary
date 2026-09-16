@@ -861,3 +861,76 @@ function adaptersFor(langCode) {
   }
   return out
 }
+
+// ---- Clipboard formatting helpers ----
+//
+// Formats a normalized entry object into clean plain text for clipboard
+// copy. Preserves parts of speech, numbered definitions, examples, and
+// synonym/antonym lists when present.
+function formatEntryText(entry) {
+  if (!entry || typeof entry !== "object") return ""
+  var word = String(entry.word || "").trim()
+  if (word === "") return ""
+
+  var lines = []
+  var header = word
+  var phonetic = String(entry.phonetic || "").trim()
+  if (phonetic !== "") header += " " + phonetic
+  lines.push(header)
+
+  if (Array.isArray(entry.meanings)) {
+    for (var i = 0; i < entry.meanings.length; i++) {
+      var m = entry.meanings[i]
+      if (!m || typeof m !== "object") continue
+      var pos = String(m.partOfSpeech || "").trim()
+      lines.push("")
+      if (pos !== "") lines.push(pos)
+      if (Array.isArray(m.definitions)) {
+        for (var j = 0; j < m.definitions.length; j++) {
+          var d = m.definitions[j]
+          if (!d || typeof d !== "object") continue
+          var defText = String(d.definition || "").trim()
+          if (defText !== "") {
+            lines.push((j + 1) + ". " + defText)
+          }
+          var ex = String(d.example || "").trim()
+          if (ex !== "") {
+            lines.push("   \"" + ex + "\"")
+          }
+        }
+      }
+      var syns = stringList(m.synonyms)
+      if (syns.length > 0) {
+        lines.push("synonyms: " + syns.join(", "))
+      }
+      var ants = stringList(m.antonyms)
+      if (ants.length > 0) {
+        lines.push("antonyms: " + ants.join(", "))
+      }
+    }
+  }
+
+  return lines.join("\n").trim()
+}
+
+function formatSingleDefinition(word, partOfSpeech, definition, example) {
+  var w = String(word || "").trim()
+  var pos = String(partOfSpeech || "").trim()
+  var def = String(definition || "").trim()
+  var ex = String(example || "").trim()
+
+  if (def === "") return w
+
+  var header = ""
+  if (w !== "") {
+    header = pos !== "" ? w + " (" + pos + "): " : w + ": "
+  } else if (pos !== "") {
+    header = "(" + pos + "): "
+  }
+
+  var text = header + def
+  if (ex !== "") {
+    text += "\n\"" + ex + "\""
+  }
+  return text
+}
