@@ -127,6 +127,9 @@ Panel {
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
 
   readonly property string heroSummary: entry ? Model.summaryLabel(entry) : ""
+  // Build tag shown in the popup's bottom-right corner so we can visually
+  // confirm which build is loaded. Bump to "v0.2-dev" when iterating.
+  readonly property string buildVersion: "v0.2"
   readonly property int panelWidth: Style.space(420)
   readonly property int panelMaxHeight: Style.space(620)
   readonly property int searchDelayMs: 250
@@ -1089,6 +1092,18 @@ Column {
             font.pixelSize: Style.font.caption
             wrapMode: Text.WordWrap
           }
+        }
+
+        // ---------- Build version ----------
+        // Right-aligned so it sits in the popup's bottom-right corner and
+        // never shifts as the result body changes above it.
+        Text {
+          anchors.right: parent.right
+          text: root.buildVersion
+          textFormat: Text.PlainText
+          color: Qt.darker(root.contentForeground, 1.8)
+          font.family: root.contentFontFamily
+          font.pixelSize: Style.font.caption
         }
       }
     }
