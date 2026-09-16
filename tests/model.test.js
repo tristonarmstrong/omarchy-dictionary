@@ -37,7 +37,8 @@ var PUBLIC_SYMBOLS = [
   "wiktCanonicalPos","wiktExtractIpa","wiktIsInflectionLine","wiktExtractDefs",
   "parseWiktionaryWikitext","summaryLabel","sourceLabel","levenshtein","fuzzyMatch","setWordlist",
   "setDataDir","websterKey","websterBucket","websterCanonicalPos","parseWebsterJson",
-  "ADAPTER_WEBSTER","ADAPTER_WIKTIONARY","ADAPTERS","adaptersFor"
+  "ADAPTER_WEBSTER","ADAPTER_WIKTIONARY","ADAPTERS","adaptersFor",
+  "formatEntryText","formatSingleDefinition"
 ];
 var exportLines = PUBLIC_SYMBOLS.map(function (s) { return "exports." + s + " = " + s + ";"; }).join("\n");
 
@@ -1114,6 +1115,103 @@ group("websterKey / websterBucket", function () {
     assert.strictEqual(M.websterBucket("apple"), "a");
     assert.strictEqual(M.websterBucket("1st-class"), "other");
     assert.strictEqual(M.websterBucket(""), "other");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Clipboard formatting (formatEntryText & formatSingleDefinition)
+// ═══════════════════════════════════════════════════════════════════════════
+group("clipboard formatting — formatEntryText", function () {
+  test("returns empty string for null or empty entry", function () {
+    assert.strictEqual(M.formatEntryText(null), "");
+    assert.strictEqual(M.formatEntryText({}), "");
+    assert.strictEqual(M.formatEntryText({ word: "" }), "");
+  });
+
+  test("formats word and phonetic header", function () {
+    var entry = { word: "hello", phonetic: "/həˈloʊ/", meanings: [] };
+    assert.strictEqual(M.formatEntryText(entry), "hello /həˈloʊ/");
+  });
+
+  test("formats single meaning and definitions with example", function () {
+    var entry = {
+      word: "hello",
+      phonetic: "/həˈloʊ/",
+      meanings: [
+        {
+          partOfSpeech: "noun",
+          definitions: [
+            { definition: "A greeting.", example: "Hello there!" }
+          ],
+          synonyms: ["greeting", "salutation"],
+          antonyms: ["goodbye"]
+        }
+      ]
+    };
+    var expected = [
+      "hello /həˈloʊ/",
+      "",
+      "noun",
+      "1. A greeting.",
+      '   "Hello there!"',
+      "synonyms: greeting, salutation",
+      "antonyms: goodbye"
+    ].join("\n");
+    assert.strictEqual(M.formatEntryText(entry), expected);
+  });
+
+  test("formats multiple meanings and definitions without examples", function () {
+    var entry = {
+      word: "run",
+      meanings: [
+        {
+          partOfSpeech: "verb",
+          definitions: [
+            { definition: "To move swiftly on foot." },
+            { definition: "To operate or manage." }
+          ]
+        },
+        {
+          partOfSpeech: "noun",
+          definitions: [
+            { definition: "An act of running." }
+          ]
+        }
+      ]
+    };
+    var expected = [
+      "run",
+      "",
+      "verb",
+      "1. To move swiftly on foot.",
+      "2. To operate or manage.",
+      "",
+      "noun",
+      "1. An act of running."
+    ].join("\n");
+    assert.strictEqual(M.formatEntryText(entry), expected);
+  });
+});
+
+group("clipboard formatting — formatSingleDefinition", function () {
+  test("formats full definition with word, part of speech, and example", function () {
+    var text = M.formatSingleDefinition("run", "verb", "To move swiftly on foot.", "She ran fast.");
+    assert.strictEqual(text, 'run (verb): To move swiftly on foot.\n"She ran fast."');
+  });
+
+  test("formats definition without example", function () {
+    var text = M.formatSingleDefinition("run", "verb", "To move swiftly on foot.", "");
+    assert.strictEqual(text, "run (verb): To move swiftly on foot.");
+  });
+
+  test("formats definition without part of speech", function () {
+    var text = M.formatSingleDefinition("run", "", "To move swiftly on foot.", "");
+    assert.strictEqual(text, "run: To move swiftly on foot.");
+  });
+
+  test("handles empty definition", function () {
+    var text = M.formatSingleDefinition("run", "verb", "", "");
+    assert.strictEqual(text, "run");
   });
 });
 

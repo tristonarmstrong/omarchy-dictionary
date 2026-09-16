@@ -144,6 +144,71 @@ Panel {
     try { return decodeURIComponent(raw) } catch (e) { return raw }
   }
 
+  // ---- Clipboard state & feedback
+  property bool entryCopied: false
+  property string copiedDefKey: ""
+  property string copyNotice: ""
+
+  Timer {
+    id: copyResetTimer
+    interval: 1800
+    repeat: false
+    onTriggered: {
+      root.entryCopied = false
+      root.copiedDefKey = ""
+      root.copyNotice = ""
+    }
+  }
+
+  function copyToClipboard(text, isEntry, defKey) {
+    var s = String(text || "").trim()
+    if (!s) return false
+
+    try {
+      if (typeof Quickshell !== "undefined" && Quickshell.clipboardText !== undefined) {
+        Quickshell.clipboardText = s
+      }
+    } catch (e1) {}
+
+    try {
+      if (typeof Quickshell !== "undefined" && typeof Quickshell.execDetached === "function") {
+        Quickshell.execDetached(["wl-copy", "--", s])
+      }
+    } catch (e2) {}
+
+    try {
+      if (clipboardProxy) {
+        clipboardProxy.text = s
+        clipboardProxy.selectAll()
+        clipboardProxy.copy()
+        clipboardProxy.deselect()
+      }
+    } catch (e3) {}
+
+    if (isEntry) {
+      root.entryCopied = true
+      root.copiedDefKey = ""
+      root.copyNotice = "copied entry to clipboard"
+    } else if (defKey !== undefined) {
+      root.entryCopied = false
+      root.copiedDefKey = defKey
+      root.copyNotice = "copied definition to clipboard"
+    }
+    copyResetTimer.restart()
+    return true
+  }
+
+  function copyEntry() {
+    if (!root.entry) return false
+    var text = Model.formatEntryText(root.entry)
+    return root.copyToClipboard(text, true)
+  }
+
+  function copyDefinition(word, partOfSpeech, definition, example, defKey) {
+    var text = Model.formatSingleDefinition(word, partOfSpeech, definition, example)
+    return root.copyToClipboard(text, false, defKey)
+  }
+
   // ---- Reset all result-related state back to idle. Called from search(),
   //      runLookup(), applyEdited(), and the language-change handler.
   function resetResults() {
@@ -154,6 +219,9 @@ Panel {
     root.suggestions = []
     root.originalQuery = ""
     root.isAutoMatched = false
+    root.entryCopied = false
+    root.copiedDefKey = ""
+    root.copyNotice = ""
   }
 
   // Inject the bundled wordlist into Model.js so fuzzyMatch() can use it,
@@ -382,6 +450,12 @@ Panel {
     onTriggered: runLookup()
   }
 
+  TextEdit {
+    id: clipboardProxy
+    visible: false
+    readOnly: true
+  }
+
   onOpenedChanged: if (opened) refreshFocus()
 
   KeyboardPanel {
@@ -398,7 +472,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: searchField.activeFocus
+      blocked: searchField.activeFocus || !keyCatcher.activeFocus
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
 
@@ -452,6 +526,7 @@ Column {
 
             Text {
               text: {
+                if (root.copyNotice !== "") return root.copyNotice
                 if (root.status === "ok" && root.entry) {
                   var parts = root.heroSummary
                   var suffix = root.variants > 1 ? " · " + root.variants + " entries" : ""
@@ -463,7 +538,7 @@ Column {
                 return "look up a word"
               }
               textFormat: Text.PlainText
-              color: Qt.darker(root.contentForeground, 1.4)
+              color: root.copyNotice !== "" ? Color.accent : Qt.darker(root.contentForeground, 1.4)
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.caption
               font.bold: true
@@ -827,59 +902,92 @@ Column {
           // doesn't evaluate the .word property on a null entry — that
           // pattern raises "Cannot read property 'word' of null" in QML
           // because it pre-evaluates both sides of `?:`.
-          Text {
+          TextEdit {
             width: parent.width
             visible: root.isAutoMatched && root.originalQuery !== "" && root.entry !== null
             text: root.autoMatchedNote()
-            textFormat: Text.PlainText
+            textFormat: TextEdit.PlainText
+            readOnly: true
+            selectByMouse: true
+            cursorVisible: false
+            activeFocusOnPress: true
             color: Qt.darker(root.contentForeground, 1.4)
+            selectionColor: Color.accent
+            selectedTextColor: Color.accentText || root.contentForeground
             font.family: root.contentFontFamily
             font.pixelSize: Style.font.caption
             font.italic: true
-            wrapMode: Text.WordWrap
+            wrapMode: TextEdit.Wrap
+            Keys.onEscapePressed: function(event) { root.close(); event.accepted = true; }
           }
 
-          Row {
+          Item {
             width: parent.width
-            spacing: Style.space(10)
+            implicitHeight: Math.max(wordRow.implicitHeight, copyEntryBtn.implicitHeight)
 
-            Text {
-              id: wordText
-              text: root.entryWord()
-              textFormat: Text.PlainText
-              color: root.contentForeground
-              font.family: root.contentFontFamily
-              font.pixelSize: Style.font.display
-              font.bold: true
-              elide: Text.ElideRight
-              width: parent.width - phoneticLabel.width - sourceTag.width - Style.space(20)
+            Row {
+              id: wordRow
+              anchors.left: parent.left
+              anchors.right: copyEntryBtn.left
+              anchors.rightMargin: Style.space(8)
               anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(10)
+
+              TextEdit {
+                id: wordText
+                text: root.entryWord()
+                textFormat: TextEdit.PlainText
+                readOnly: true
+                selectByMouse: true
+                cursorVisible: false
+                activeFocusOnPress: true
+                color: root.contentForeground
+                selectionColor: Color.accent
+                selectedTextColor: Color.accentText || root.contentForeground
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.display
+                font.bold: true
+                anchors.verticalCenter: parent.verticalCenter
+                Keys.onEscapePressed: function(event) { root.close(); event.accepted = true; }
+              }
+
+              Text {
+                id: phoneticLabel
+                text: root.entryPhonetic()
+                textFormat: Text.PlainText
+                color: Qt.darker(root.contentForeground, 1.3)
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.body
+                font.italic: true
+                anchors.verticalCenter: parent.verticalCenter
+                visible: text !== ""
+              }
+
+              // Small muted source tag (e.g. "Wiktionary") to make it obvious
+              // which data source filled the panel.
+              Text {
+                id: sourceTag
+                text: root.entry ? Model.sourceLabel(entry) : ""
+                textFormat: Text.PlainText
+                color: Qt.darker(root.contentForeground, 1.55)
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.caption
+                font.italic: true
+                anchors.verticalCenter: parent.verticalCenter
+                visible: text !== ""
+              }
             }
 
-            Text {
-              id: phoneticLabel
-              text: root.entryPhonetic()
-              textFormat: Text.PlainText
-              color: Qt.darker(root.contentForeground, 1.3)
-              font.family: root.contentFontFamily
-              font.pixelSize: Style.font.body
-              font.italic: true
+            Button {
+              id: copyEntryBtn
+              anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
-              visible: text !== ""
-            }
-
-            // Small muted source tag (e.g. "Wiktionary") to make it obvious
-            // which data source filled the panel.
-            Text {
-              id: sourceTag
-              text: root.entry ? Model.sourceLabel(entry) : ""
-              textFormat: Text.PlainText
-              color: Qt.darker(root.contentForeground, 1.55)
-              font.family: root.contentFontFamily
-              font.pixelSize: Style.font.caption
-              font.italic: true
-              anchors.verticalCenter: parent.verticalCenter
-              visible: text !== ""
+              iconText: root.entryCopied ? "󰄬" : "󰆏"
+              tooltipText: root.entryCopied ? "Copied full entry" : "Copy full entry"
+              foreground: root.entryCopied ? Color.accent : root.contentForeground
+              horizontalPadding: Style.space(6)
+              verticalPadding: Style.space(4)
+              onClicked: root.copyEntry()
             }
           }
 
@@ -907,8 +1015,11 @@ Column {
                 model: root.entry ? root.entry.meanings : []
 
                 Column {
+                  id: meaningBlock
                   required property var modelData
                   required property int index
+                  readonly property string partOfSpeech: modelData.partOfSpeech || ""
+                  readonly property int meaningIndex: index
                   width: parent.width
                   spacing: Style.space(6)
 
@@ -946,6 +1057,7 @@ Column {
                     Column {
                       required property var modelData
                       required property int index
+                      readonly property string defKey: meaningBlock.meaningIndex + "_" + index
                       width: parent.width
                       spacing: Style.space(2)
 
@@ -964,52 +1076,95 @@ Column {
                           anchors.topMargin: 2
                         }
 
-                        Text {
-                          width: parent.width - Style.space(20) - Style.space(8)
+                        TextEdit {
+                          id: defTextEdit
+                          width: parent.width - Style.space(20) - Style.space(8) - (copyDefBtn.implicitWidth + Style.space(6))
                           text: modelData.definition
-                          textFormat: Text.PlainText
+                          textFormat: TextEdit.PlainText
+                          readOnly: true
+                          selectByMouse: true
+                          cursorVisible: false
+                          activeFocusOnPress: true
                           color: root.contentForeground
+                          selectionColor: Color.accent
+                          selectedTextColor: Color.accentText || root.contentForeground
                           font.family: root.contentFontFamily
                           font.pixelSize: Style.font.body
-                          wrapMode: Text.WordWrap
+                          wrapMode: TextEdit.Wrap
+                          anchors.top: parent.top
+                          Keys.onEscapePressed: function(event) { root.close(); event.accepted = true; }
+                        }
+
+                        Button {
+                          id: copyDefBtn
+                          anchors.top: parent.top
+                          iconText: (root.copiedDefKey === defKey) ? "󰄬" : "󰆏"
+                          tooltipText: (root.copiedDefKey === defKey) ? "Copied" : "Copy definition"
+                          foreground: (root.copiedDefKey === defKey) ? Color.accent : Qt.darker(root.contentForeground, 1.5)
+                          horizontalPadding: Style.space(4)
+                          verticalPadding: Style.space(2)
+                          fontSize: Style.font.caption
+                          iconSize: Style.font.caption
+                          onClicked: root.copyDefinition(root.entryWord(), meaningBlock.partOfSpeech, modelData.definition, modelData.example, defKey)
                         }
                       }
 
-                      Text {
+                      TextEdit {
                         width: parent.width - Style.space(20) - Style.space(8)
                         x: Style.space(20) + Style.space(8)
                         visible: modelData.example !== ""
                         text: "\"" + modelData.example + "\""
-                        textFormat: Text.PlainText
+                        textFormat: TextEdit.PlainText
+                        readOnly: true
+                        selectByMouse: true
+                        cursorVisible: false
+                        activeFocusOnPress: true
                         color: Qt.darker(root.contentForeground, 1.3)
+                        selectionColor: Color.accent
+                        selectedTextColor: Color.accentText || root.contentForeground
                         font.family: root.contentFontFamily
                         font.pixelSize: Style.font.caption
                         font.italic: true
-                        wrapMode: Text.WordWrap
+                        wrapMode: TextEdit.Wrap
+                        Keys.onEscapePressed: function(event) { root.close(); event.accepted = true; }
                       }
                     }
                   }
 
-                  Text {
+                  TextEdit {
                     visible: modelData.synonyms.length > 0
                     width: parent.width
                     text: "synonyms: " + modelData.synonyms.join(", ")
-                    textFormat: Text.PlainText
+                    textFormat: TextEdit.PlainText
+                    readOnly: true
+                    selectByMouse: true
+                    cursorVisible: false
+                    activeFocusOnPress: true
                     color: Qt.darker(root.contentForeground, 1.5)
+                    selectionColor: Color.accent
+                    selectedTextColor: Color.accentText || root.contentForeground
                     font.family: root.contentFontFamily
                     font.pixelSize: Style.font.caption
-                    wrapMode: Text.WordWrap
+                    wrapMode: TextEdit.Wrap
+                    Keys.onEscapePressed: function(event) { root.close(); event.accepted = true; }
                   }
 
-                  Text {
+                  TextEdit {
                     visible: modelData.antonyms.length > 0
                     width: parent.width
                     text: "antonyms: " + modelData.antonyms.join(", ")
-                    textFormat: Text.PlainText
+                    textFormat: TextEdit.PlainText
+                    readOnly: true
+                    selectByMouse: true
+                    cursorVisible: false
+                    activeFocusOnPress: true
                     color: Qt.darker(root.contentForeground, 1.5)
+                    selectionColor: Color.accent
+                    selectedTextColor: Color.accentText || root.contentForeground
                     font.family: root.contentFontFamily
                     font.pixelSize: Style.font.caption
-                    wrapMode: Text.WordWrap
+                    wrapMode: TextEdit.Wrap
+                    Keys.onEscapePressed: function(event) { root.close(); event.accepted = true; }
                   }
                 }
               }
