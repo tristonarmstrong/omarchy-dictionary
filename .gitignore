@@ -1,3 +1,8 @@
 node_modules/
 *.log
 .DS_Store
+# Raw GCIDE XML used by scripts/build-webster.py — only the generated
+# data/webster/*.json.gz files are committed.
+/tmp/gcide/
+gcide_xml-0.53.zip
+gcide_xml-0.53/

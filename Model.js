@@ -553,6 +553,7 @@ function sourceLabel(entry) {
   if (!entry || !entry.source) return ""
   if (entry.source === "wiktionary") return "Wiktionary"
   if (entry.source === "dictionaryapi") return "Free Dictionary"
+  if (entry.source === "webster1913") return "Webster's 1913"
   return String(entry.source)
 }
 
@@ -694,4 +695,169 @@ function fuzzyMatch(rawQuery) {
     alts.push(inBand[n].word)
   }
   return { autoMatch: null, alternatives: alts }
+}
+
+// ---- Dictionary adapters ----
+//
+// Every dictionary source is an adapter — a plain object with a uniform
+// interface:
+//
+//   {
+//     id: "webster1913",                  // stable id, used in logs/tests
+//     label: "Webster's 1913",            // human label (panel source tag)
+//     languages: ["en"],                  // language values it can serve
+//     argsFor: function (word, lang),     // argv for the QML Process ([] = skip)
+//     parse: function (stdout, word, lang)
+//                                          // -> {ok:true, entry} | {ok:false, kind, error}
+//   }
+//
+// adaptersFor(lang) returns the ordered chain for a language. Panel.qml
+// tries the chain in order and takes the first ok result; any other result
+// (notfound, empty, invalid, or a process failure) advances to the next
+// adapter. When the chain is exhausted the panel falls back to the existing
+// fuzzy-recovery / notfound UI.
+//
+// Adding a future source is a new adapter object plus one line in ADAPTERS —
+// the lookup flow itself never changes.
+
+// Base directory of the bundled offline data (data/webster), injected from
+// QML at startup via setDataDir() — same pattern as setWordlist(). Empty
+// means no local data available; the local adapter then yields no argv and
+// the chain skips straight to the network.
+var _DATA_DIR = ""
+
+function setDataDir(dir) {
+  _DATA_DIR = String(dir || "")
+}
+
+// Normalize a lookup word to the key scheme scripts/build-webster.py used:
+// lowercased, whitespace collapsed.
+function websterKey(word) {
+  return String(word || "").trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+// Bucket file for a normalized key: first letter a-z, else "other".
+function websterBucket(key) {
+  var c = String(key || "").charAt(0)
+  return (c >= "a" && c <= "z") ? c : "other"
+}
+
+// Map GCIDE part-of-speech abbreviations to the canonical labels the panel
+// renders. Unknown values pass through raw (loose mode), matching the
+// Wiktionary parser's treatment of unlisted languages.
+function websterCanonicalPos(raw) {
+  var p = String(raw || "").trim().toLowerCase().replace(/\./g, " ").replace(/\s+/g, " ").trim()
+  if (p === "") return ""
+  if (p === "n" || p === "prop n" || p === "proper n") return "noun"
+  if (p === "a") return "adjective"
+  if (p === "adv") return "adverb"
+  if (p === "prep" || p === "preposition") return "preposition"
+  if (p === "pron" || p === "pronoun") return "pronoun"
+  if (p === "conj" || p === "conjunction") return "conjunction"
+  if (p === "interj" || p === "interjection") return "interjection"
+  // "particle" contains "article" — match the whole word, not a substring.
+  if (p === "art" || p === "article" || p.slice(-8) === " article") return "article"
+  if (p === "v" || p.charAt(0) === "v" && (p.charAt(1) === " " || p.length === 1)) return "verb"
+  return String(raw || "").trim()
+}
+
+// Parse the stdout of the webster1913 adapter's gzip process: the whole
+// letter-bucket JSON, from which we pull the single headword entry and
+// shape it into the canonical entry the panel renders.
+function parseWebsterJson(stdout, word) {
+  var text = String(stdout || "").trim()
+  if (text === "") {
+    return { ok: false, kind: "empty", error: "empty dictionary data" }
+  }
+  var data = null
+  try {
+    data = JSON.parse(text)
+  } catch (e) {
+    return { ok: false, kind: "invalid", error: "could not parse dictionary data" }
+  }
+  if (!data || typeof data !== "object") {
+    return { ok: false, kind: "invalid", error: "could not parse dictionary data" }
+  }
+  var key = websterKey(word)
+  var raw = data[key]
+  if (!raw || typeof raw !== "object") {
+    return { ok: false, kind: "notfound", error: "no entry for \"" + String(word || "").trim() + "\"" }
+  }
+
+  var meanings = []
+  var groups = Array.isArray(raw.pos) ? raw.pos : []
+  for (var i = 0; i < groups.length; i++) {
+    var g = groups[i]
+    if (!Array.isArray(g) || g.length < 2) continue
+    var defs = []
+    var rawDefs = Array.isArray(g[1]) ? g[1] : []
+    for (var j = 0; j < rawDefs.length; j++) {
+      var d = String(rawDefs[j] || "").trim()
+      if (d !== "") defs.push({ definition: d, example: "", synonyms: [], antonyms: [] })
+    }
+    if (defs.length === 0) continue
+    meanings.push({
+      partOfSpeech: websterCanonicalPos(g[0]),
+      definitions: defs,
+      synonyms: [],
+      antonyms: []
+    })
+  }
+  if (meanings.length === 0) {
+    return { ok: false, kind: "empty", error: "no entry returned" }
+  }
+
+  return {
+    ok: true,
+    entry: {
+      word: String(raw.w || word || "").trim(),
+      phonetic: String(raw.pr || "").trim(),
+      audioUrl: "",
+      source: "webster1913",
+      language: "en",
+      meanings: meanings
+    }
+  }
+}
+
+var ADAPTER_WEBSTER = {
+  id: "webster1913",
+  label: "Webster's 1913",
+  languages: ["en"],
+  argsFor: function (word, lang) {
+    var key = websterKey(word)
+    if (key === "" || _DATA_DIR === "") return []
+    return ["gzip", "-dc", _DATA_DIR + "/" + websterBucket(key) + ".json.gz"]
+  },
+  parse: function (stdout, word, lang) {
+    return parseWebsterJson(stdout, word)
+  }
+}
+
+var ADAPTER_WIKTIONARY = {
+  id: "wiktionary",
+  label: "Wiktionary",
+  languages: ["*"],
+  argsFor: function (word, lang) {
+    return lookupArgs(word, lang)
+  },
+  parse: function (stdout, word, lang) {
+    return parseResponse(stdout, lang)
+  }
+}
+
+// Registry order IS the fallback chain order. English resolves to
+// [webster1913, wiktionary] — offline-first with a network fallback;
+// every other language resolves to [wiktionary].
+var ADAPTERS = [ADAPTER_WEBSTER, ADAPTER_WIKTIONARY]
+
+function adaptersFor(langCode) {
+  var lang = String(langCode || defaultLanguage()).trim().toLowerCase() || defaultLanguage()
+  var out = []
+  for (var i = 0; i < ADAPTERS.length; i++) {
+    var a = ADAPTERS[i]
+    if (!a || !Array.isArray(a.languages)) continue
+    if (a.languages.indexOf("*") >= 0 || a.languages.indexOf(lang) >= 0) out.push(a)
+  }
+  return out
 }

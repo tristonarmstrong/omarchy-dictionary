@@ -35,7 +35,9 @@ var PUBLIC_SYMBOLS = [
   "apiBase","lookupArgs","parseResponse","normalizeEntry","normalizeMeaning","normalizeDefinition","stringList",
   "parseSections","stripInlineHeaders","WIKT_POS_KEYS","WIKT_SKIP_DROP",
   "wiktCanonicalPos","wiktExtractIpa","wiktIsInflectionLine","wiktExtractDefs",
-  "parseWiktionaryWikitext","summaryLabel","sourceLabel","levenshtein","fuzzyMatch","setWordlist"
+  "parseWiktionaryWikitext","summaryLabel","sourceLabel","levenshtein","fuzzyMatch","setWordlist",
+  "setDataDir","websterKey","websterBucket","websterCanonicalPos","parseWebsterJson",
+  "ADAPTER_WEBSTER","ADAPTER_WIKTIONARY","ADAPTERS","adaptersFor"
 ];
 var exportLines = PUBLIC_SYMBOLS.map(function (s) { return "exports." + s + " = " + s + ";"; }).join("\n");
 
@@ -732,7 +734,7 @@ group("parseSections — edge cases", function () {
 // ═══════════════════════════════════════════════════════════════════════════
 group("manifest.json", function () {
   var manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "manifest.json"), "utf8"));
-  test("version is 1.2.1", function () { eq(manifest.version, "1.2.1"); });
+  test("version is 1.3.0", function () { eq(manifest.version, "1.3.0"); });
   test("id matches module name", function () { eq(manifest.id, "tristonarmstrong.dictionary"); });
   test("schemaVersion is 1", function () { eq(manifest.schemaVersion, 1); });
   test("kinds includes bar-widget", function () { assert(manifest.kinds.indexOf("bar-widget") > -1); });
@@ -964,6 +966,154 @@ group("apiBase — edge cases", function () {
     ["en", "th", "ja", "ko", "fr", "de"].forEach(function (c) {
       assert(M.apiBase(c).endsWith("titles="), "should end with titles= for " + c);
     });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Dictionary adapters (issue #12)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Tiny synthetic Webster's letter-bucket JSON in the exact shape
+// scripts/build-webster.py emits: {key: {w, pr, pos: [[rawPos, [defs]]]}}.
+var WEBSTER_FIXTURE = JSON.stringify({
+  "apple": { "w": "Apple", "pr": "(ap'p'l)", "pos": [
+    ["n", ["The fleshy pome of a rosaceous tree.", "Any round fruit resembling an apple."]],
+    ["v. i.", ["To grow like an apple."]]
+  ]},
+  "a": { "w": "A", "pr": "", "pos": [
+    ["", ["The first letter of the English alphabet."]]
+  ]}
+});
+
+group("adaptersFor — chain ordering", function () {
+  test("english resolves to [webster1913, wiktionary]", function () {
+    var ids = M.adaptersFor("en").map(function (a) { return a.id; });
+    assert.deepStrictEqual(ids, ["webster1913", "wiktionary"]);
+  });
+  test("other languages resolve to [wiktionary] only", function () {
+    ["fr", "ja", "th", "de"].forEach(function (c) {
+      var ids = M.adaptersFor(c).map(function (a) { return a.id; });
+      assert.deepStrictEqual(ids, ["wiktionary"], c);
+    });
+  });
+  test("unknown language falls back to english chain", function () {
+    var ids = M.adaptersFor("xx").map(function (a) { return a.id; });
+    assert.deepStrictEqual(ids, ["wiktionary"], "xx is not a webster language");
+  });
+  test("registry order is the fallback order", function () {
+    var ids = M.ADAPTERS.map(function (a) { return a.id; });
+    assert.deepStrictEqual(ids, ["webster1913", "wiktionary"]);
+  });
+  test("every adapter has the full interface", function () {
+    M.ADAPTERS.forEach(function (a) {
+      assert(typeof a.id === "string" && a.id !== "", "id");
+      assert(typeof a.label === "string" && a.label !== "", "label");
+      assert(Array.isArray(a.languages) && a.languages.length > 0, "languages");
+      assert(typeof a.argsFor === "function", "argsFor");
+      assert(typeof a.parse === "function", "parse");
+    });
+  });
+});
+
+group("webster adapter — argsFor", function () {
+  test("no data dir -> no argv (chain skips it)", function () {
+    M.setDataDir("");
+    assert.deepStrictEqual(M.ADAPTER_WEBSTER.argsFor("apple", "en"), []);
+  });
+  test("builds a gzip argv for the right letter bucket", function () {
+    M.setDataDir("/tmp/data");
+    assert.deepStrictEqual(
+      M.ADAPTER_WEBSTER.argsFor("Apple", "en"),
+      ["gzip", "-dc", "/tmp/data/a.json.gz"]);
+    assert.deepStrictEqual(
+      M.ADAPTER_WEBSTER.argsFor("cab", "en"),
+      ["gzip", "-dc", "/tmp/data/c.json.gz"]);
+  });
+  test("non-alpha headwords use the other bucket", function () {
+    M.setDataDir("/tmp/data");
+    assert.deepStrictEqual(
+      M.ADAPTER_WEBSTER.argsFor("1st-class", "en"),
+      ["gzip", "-dc", "/tmp/data/other.json.gz"]);
+  });
+  test("empty word -> no argv", function () {
+    M.setDataDir("/tmp/data");
+    assert.deepStrictEqual(M.ADAPTER_WEBSTER.argsFor("  ", "en"), []);
+    M.setDataDir("");
+  });
+});
+
+group("websterCanonicalPos", function () {
+  var cases = {
+    "n": "noun", "n.": "noun", "prop. n.": "noun",
+    "v. t.": "verb", "v. i.": "verb", "v.": "verb",
+    "a.": "adjective", "adv.": "adverb", "prep.": "preposition",
+    "pron.": "pronoun", "conj.": "conjunction", "interj.": "interjection",
+    "definite article": "article", "": ""
+  };
+  Object.keys(cases).forEach(function (raw) {
+    test(JSON.stringify(raw) + " -> " + JSON.stringify(cases[raw]), function () {
+      assert.strictEqual(M.websterCanonicalPos(raw), cases[raw]);
+    });
+  });
+  test("unknown pos passes through raw", function () {
+    assert.strictEqual(M.websterCanonicalPos("particle"), "particle");
+  });
+});
+
+group("parseWebsterJson", function () {
+  test("shapes a bucket entry into the canonical entry", function () {
+    var r = M.parseWebsterJson(WEBSTER_FIXTURE, "apple");
+    assert(r.ok, "should be ok");
+    assert.strictEqual(r.entry.word, "Apple");
+    assert.strictEqual(r.entry.phonetic, "(ap'p'l)");
+    assert.strictEqual(r.entry.source, "webster1913");
+    assert.strictEqual(r.entry.language, "en");
+    assert.strictEqual(M.sourceLabel(r.entry), "Webster's 1913");
+    assert.strictEqual(r.entry.meanings.length, 2);
+    assert.strictEqual(r.entry.meanings[0].partOfSpeech, "noun");
+    assert.strictEqual(r.entry.meanings[0].definitions.length, 2);
+    assert.strictEqual(r.entry.meanings[0].definitions[0].definition,
+      "The fleshy pome of a rosaceous tree.");
+    assert.strictEqual(r.entry.meanings[1].partOfSpeech, "verb");
+  });
+  test("lookup is case-insensitive", function () {
+    assert(M.parseWebsterJson(WEBSTER_FIXTURE, "Apple").ok);
+    assert(M.parseWebsterJson(WEBSTER_FIXTURE, "APPLE").ok);
+  });
+  test("empty partOfSpeech survives (panel hides the header)", function () {
+    var r = M.parseWebsterJson(WEBSTER_FIXTURE, "a");
+    assert(r.ok);
+    assert.strictEqual(r.entry.meanings[0].partOfSpeech, "");
+    assert.strictEqual(r.entry.meanings[0].definitions[0].definition,
+      "The first letter of the English alphabet.");
+  });
+  test("missing headword -> notfound", function () {
+    var r = M.parseWebsterJson(WEBSTER_FIXTURE, "selfie");
+    assert(!r.ok && r.kind === "notfound");
+  });
+  test("empty stdout -> empty", function () {
+    var r = M.parseWebsterJson("", "apple");
+    assert(!r.ok && r.kind === "empty");
+  });
+  test("garbage stdout -> invalid", function () {
+    var r = M.parseWebsterJson("not json", "apple");
+    assert(!r.ok && r.kind === "invalid");
+  });
+  test("adapter parse delegates to parseWebsterJson", function () {
+    var r = M.ADAPTER_WEBSTER.parse(WEBSTER_FIXTURE, "apple", "en");
+    assert(r.ok && r.entry.source === "webster1913");
+  });
+});
+
+group("websterKey / websterBucket", function () {
+  test("key is lowercased with collapsed whitespace", function () {
+    assert.strictEqual(M.websterKey("  Apple  "), "apple");
+    assert.strictEqual(M.websterKey("a 1"), "a 1");
+  });
+  test("bucket is the first letter, else other", function () {
+    assert.strictEqual(M.websterBucket("apple"), "a");
+    assert.strictEqual(M.websterBucket("1st-class"), "other");
+    assert.strictEqual(M.websterBucket(""), "other");
   });
 });
 
